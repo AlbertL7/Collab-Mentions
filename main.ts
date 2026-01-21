@@ -1,0 +1,1733 @@
+import {
+    App,
+    Editor,
+    MarkdownView,
+    Plugin,
+    PluginSettingTab,
+    Setting,
+    TFile,
+    debounce,
+    EditorSuggest,
+    EditorPosition,
+    EditorSuggestTriggerInfo,
+    EditorSuggestContext,
+    Notice
+} from 'obsidian';
+
+import { CollabMentionsSettings, DEFAULT_SETTINGS, VaultUser, Reminder } from './src/types';
+import { UserManager } from './src/userManager';
+import { MentionParser } from './src/mentionParser';
+import { ChatManager } from './src/chatManager';
+import { ReminderManager } from './src/reminderManager';
+import { Notifier } from './src/notifier';
+import { RegisterModal, UserManagementModal } from './src/ui/registerModal';
+import { MentionPanelView, MENTION_PANEL_VIEW_TYPE, ReminderNotificationModal } from './src/ui/mentionPanel';
+
+export default class CollabMentionsPlugin extends Plugin {
+    settings: CollabMentionsSettings;
+    userManager: UserManager;
+    mentionParser: MentionParser;
+    chatManager: ChatManager;
+    reminderManager: ReminderManager;
+    notifier: Notifier;
+    private fileWatcherInterval: number | null = null;
+    private heartbeatInterval: number | null = null;
+    private cleanupInterval: number | null = null;  // Periodic cleanup of tracking Sets
+    private lastMentionsFileHash: string | null = null;
+    private lastChatFileHash: string | null = null;
+    private lastUsersFileHash: string | null = null;
+    private lastRemindersFileHash: string | null = null;
+    private notifiedMentionIds: Set<string> = new Set();  // Track already-notified mentions
+    private notifiedContentHashes: Set<string> = new Set();  // Track by content hash for extra robustness
+    private knownChannelIds: Set<string> = new Set();  // Track channels user is in
+    private ribbonIconEl: HTMLElement | null = null;  // Reference to ribbon icon for badge updates
+    private lastUnreadNotificationTime: number = 0;  // Prevent repeated unread notifications
+    private wasSnoozing: boolean = false;  // Track if user was snoozing
+    private lastKnownMessageIds: Map<string, Set<string>> = new Map();  // Track known message IDs per channel
+    private notifiedMessageHashes: Set<string> = new Set();  // Track message content hashes for notification dedup
+    private notifiedReminderIds: Set<string> = new Set();  // Track already-notified reminders
+    private lastCleanupTime: number = 0;  // Track last cleanup time
+
+    async onload(): Promise<void> {
+        console.log('Loading Collab Mentions plugin');
+
+        await this.loadSettings();
+        // Ensure settings file exists (creates data.json if missing)
+        await this.saveSettings();
+
+        // Initialize managers
+        this.userManager = new UserManager(this.app);
+        await this.userManager.loadUsers();
+        this.userManager.identifyCurrentUser();
+
+        this.mentionParser = new MentionParser(this.app, this.userManager);
+        await this.mentionParser.loadMentions();
+
+        this.chatManager = new ChatManager(this.app, this.userManager);
+        await this.chatManager.loadChat();
+
+        this.reminderManager = new ReminderManager(this.app, this.userManager);
+        await this.reminderManager.loadReminders();
+
+        // Set up reminder notification callback
+        this.reminderManager.setOnReminderDue((reminder: Reminder) => {
+            this.showReminderNotification(reminder);
+        });
+
+        this.notifier = new Notifier(this.app, this.mentionParser, this.userManager);
+
+        // Register the mentions panel view
+        this.registerView(
+            MENTION_PANEL_VIEW_TYPE,
+            (leaf) => new MentionPanelView(
+                leaf,
+                this.mentionParser,
+                this.userManager,
+                this.chatManager,
+                this.reminderManager,
+                () => this.updateRibbonBadge()  // Callback to update badge when read status changes
+            )
+        );
+
+        // Add ribbon icon with unread badge - toggles panel open/closed
+        this.ribbonIconEl = this.addRibbonIcon('at-sign', 'Collab Mentions', async () => {
+            if (!this.userManager.isRegistered()) {
+                // Open registration modal if not registered
+                new RegisterModal(
+                    this.app,
+                    this.userManager,
+                    () => this.onUserRegistered()
+                ).open();
+            } else {
+                // Toggle mentions panel if registered
+                await this.toggleMentionPanel();
+            }
+        });
+
+        // Add badge element to ribbon icon
+        this.ribbonIconEl.addClass('collab-ribbon-icon');
+        const badgeEl = this.ribbonIconEl.createEl('span', { cls: 'collab-ribbon-badge' });
+        badgeEl.style.display = 'none';
+
+        // Add commands
+        this.addCommand({
+            id: 'open-mentions-panel',
+            name: 'Open mentions panel',
+            callback: async () => {
+                await this.activateMentionPanel();
+            }
+        });
+
+        this.addCommand({
+            id: 'register-user',
+            name: 'Register / Manage user',
+            callback: () => {
+                if (this.userManager.isRegistered()) {
+                    new UserManagementModal(
+                        this.app,
+                        this.userManager,
+                        () => this.onUserRegistered()
+                    ).open();
+                } else {
+                    new RegisterModal(
+                        this.app,
+                        this.userManager,
+                        () => this.onUserRegistered()
+                    ).open();
+                }
+            }
+        });
+
+        this.addCommand({
+            id: 'check-mentions',
+            name: 'Check for new mentions',
+            callback: async () => {
+                await this.mentionParser.loadMentions();
+                const count = await this.notifier.checkAndNotify(this.settings.notificationSound);
+
+                if (count === 0) {
+                    this.notifier.showNotice('No new mentions');
+                }
+            }
+        });
+
+        this.addCommand({
+            id: 'mark-all-read',
+            name: 'Mark all mentions as read',
+            callback: async () => {
+                await this.mentionParser.markAllAsRead();
+                this.notifier.showNotice('All mentions marked as read');
+                this.refreshPanel();
+            }
+        });
+
+        // Register the @ autocomplete suggester
+        this.registerEditorSuggest(new MentionSuggest(this.app, this.userManager, this.chatManager));
+
+        // Watch for file changes to detect new mentions
+        // Uses a hybrid approach: immediate processing + follow-up processing for rapid edits
+        // This ensures notifications go out immediately AND we don't miss mentions from rapid consecutive edits
+        const pendingFiles: Map<string, TFile> = new Map();
+        let followUpTimer: number | null = null;
+
+        const processFileForMentions = async (file: TFile): Promise<void> => {
+            console.log('[Collab-Mentions] Processing file for mentions:', file.path);
+            if (this.userManager.isRegistered()) {
+                const newMentions = await this.mentionParser.processFile(file);
+                console.log('[Collab-Mentions] New mentions found:', newMentions.length);
+                for (const mention of newMentions) {
+                    console.log('[Collab-Mentions] Notifying mention to:', mention.to);
+                    this.notifier.notifyNewMention(mention);
+                }
+            }
+        };
+
+        // Debounced immediate processing (leading edge for responsiveness)
+        const debouncedProcessFile = debounce(
+            async (file: TFile) => {
+                console.log('[Collab-Mentions] File modified (immediate):', file.path);
+                await processFileForMentions(file);
+            },
+            1000,
+            true
+        );
+
+        this.registerEvent(
+            this.app.vault.on('modify', (file) => {
+                if (file instanceof TFile && file.extension === 'md') {
+                    // Immediate processing via debounce (first edit processed right away)
+                    debouncedProcessFile(file);
+
+                    // Track this file for follow-up processing (catches rapid consecutive edits)
+                    pendingFiles.set(file.path, file);
+
+                    // Reset follow-up timer
+                    if (followUpTimer !== null) {
+                        window.clearTimeout(followUpTimer);
+                    }
+
+                    // After 1.5 seconds of no edits, re-process all pending files
+                    // This catches any mentions added during the debounce period
+                    followUpTimer = window.setTimeout(async () => {
+                        if (pendingFiles.size > 0) {
+                            console.log('[Collab-Mentions] Follow-up processing', pendingFiles.size, 'files');
+                            for (const [path, pendingFile] of pendingFiles) {
+                                await processFileForMentions(pendingFile);
+                            }
+                            pendingFiles.clear();
+                        }
+                        followUpTimer = null;
+                    }, 1500);
+                }
+            })
+        );
+
+        // Add settings tab
+        this.addSettingTab(new CollabMentionsSettingTab(this.app, this));
+
+        // Check for mentions on startup (after a delay to let vault sync)
+        if (this.userManager.isRegistered() && this.settings.enableNotifications) {
+            setTimeout(async () => {
+                await this.mentionParser.loadMentions();
+                await this.chatManager.loadChat();
+                await this.reminderManager.loadReminders();
+
+                const currentUser = this.userManager.getCurrentUser();
+                if (!currentUser) return;
+
+                const username = currentUser.vaultName;
+
+                // Initialize per-user notification tracking if needed
+                if (!this.settings.notifiedMentionIdsByUser[username]) {
+                    this.settings.notifiedMentionIdsByUser[username] = [];
+                }
+                if (!this.settings.lastNotifiedChatTimestampByUser[username]) {
+                    this.settings.lastNotifiedChatTimestampByUser[username] = {};
+                }
+
+                const userNotifiedMentions = this.settings.notifiedMentionIdsByUser[username];
+                const userChatTimestamps = this.settings.lastNotifiedChatTimestampByUser[username];
+
+                const unreadMentions = this.mentionParser.getUnreadMentions();
+
+                // Filter to only mentions not yet notified for THIS user
+                const notNotifiedYet = unreadMentions.filter(
+                    m => !userNotifiedMentions.includes(m.id)
+                );
+
+                // Check for unread mentions that haven't been notified yet
+                if (notNotifiedYet.length > 0) {
+                    this.notifier.showStartupNotifications(notNotifiedYet);
+                    // Mark these as notified for this user
+                    notNotifiedYet.forEach(m => {
+                        if (!userNotifiedMentions.includes(m.id)) {
+                            userNotifiedMentions.push(m.id);
+                        }
+                    });
+                    // Cleanup old notified IDs (keep only those that still exist)
+                    const existingIds = new Set(this.mentionParser.getAllMentionIds());
+                    this.settings.notifiedMentionIdsByUser[username] = userNotifiedMentions.filter(
+                        id => existingIds.has(id)
+                    );
+                    await this.saveSettings();
+                }
+
+                // Check for unread chat messages (only notify once per session for new messages)
+                const channels = this.chatManager.getChannelsForUser(username);
+                let newUnreadCount = 0;
+
+                for (const channel of channels) {
+                    const lastNotified = userChatTimestamps[channel.id];
+                    const lastNotifiedTime = lastNotified ? new Date(lastNotified).getTime() : 0;
+                    const messages = this.chatManager.getMessages(channel.id);
+
+                    // Count messages newer than our last notification that aren't from us
+                    const newMessages = messages.filter(m =>
+                        new Date(m.timestamp).getTime() > lastNotifiedTime &&
+                        m.from !== username &&
+                        m.from !== 'system' &&
+                        !m.deleted
+                    );
+                    newUnreadCount += newMessages.length;
+
+                    // Update last notified timestamp for this channel for this user
+                    if (messages.length > 0) {
+                        const latestMsg = messages[messages.length - 1];
+                        userChatTimestamps[channel.id] = latestMsg.timestamp;
+                    }
+                }
+
+                if (newUnreadCount > 0) {
+                    this.showCenteredNotification(
+                        '💬 Unread Messages',
+                        `You have ${newUnreadCount} unread chat message${newUnreadCount > 1 ? 's' : ''}`,
+                        () => {
+                            this.activateMentionPanel({ tab: 'chat' });
+                        }
+                    );
+                    await this.saveSettings();
+                }
+
+                // Check for missed/due reminders - show individual modals
+                const dueReminders = await this.reminderManager.checkDueReminders();
+                if (dueReminders.length > 0) {
+                    console.log('[Collab-Mentions] Due reminders on startup:', dueReminders.length);
+                    // Track and show each reminder - the callback already fired in checkDueReminders
+                    // but we need to track them to prevent duplicate notifications
+                    for (const reminder of dueReminders) {
+                        this.notifiedReminderIds.add(reminder.id);
+                    }
+                }
+
+                // Start periodic reminder checking (every 5 seconds for responsive notifications)
+                this.reminderManager.startPeriodicCheck(5000);
+
+                // Run initial auto-cleanup
+                if (this.settings.autoCleanup) {
+                    await this.mentionParser.autoCleanupMentions(
+                        this.settings.maxMentionsPerUser,
+                        this.settings.cleanupIntervalHours
+                    );
+                }
+
+                // Update ribbon badge with initial counts
+                this.updateRibbonBadge();
+            }, 3000);
+        }
+
+        // Start file watcher if enabled
+        if (this.settings.enableFileWatcher && this.userManager.isRegistered()) {
+            this.startFileWatcher();
+        }
+
+        // Start heartbeat for presence tracking
+        if (this.userManager.isRegistered()) {
+            this.startHeartbeat();
+        }
+
+        // Show registration prompt if not registered
+        if (!this.userManager.isRegistered()) {
+            setTimeout(() => {
+                this.notifier.showNotice(
+                    '👋 Welcome to Collab Mentions! Click the @ icon to register.',
+                    10000
+                );
+            }, 2000);
+        }
+    }
+
+    async onunload(): Promise<void> {
+        console.log('Unloading Collab Mentions plugin');
+        this.stopFileWatcher();
+        this.stopHeartbeat();
+        this.stopCleanupInterval();
+        this.reminderManager.stopPeriodicCheck();
+        // Clear presence so we show as offline
+        await this.userManager.clearPresence();
+    }
+
+    /**
+     * Called after a user successfully registers - starts file watcher and heartbeat
+     */
+    private onUserRegistered(): void {
+        console.log('[Collab-Mentions] User registered, starting services...');
+
+        // Start file watcher if enabled
+        if (this.settings.enableFileWatcher) {
+            this.startFileWatcher();
+        }
+
+        // Start heartbeat for presence tracking
+        this.startHeartbeat();
+
+        // Start periodic reminder checking (every 5 seconds for responsive notifications)
+        this.reminderManager.startPeriodicCheck(5000);
+
+        // Start periodic cleanup of notification tracking
+        this.startCleanupInterval();
+
+        // Refresh the panel to show updated state
+        this.refreshPanel();
+    }
+
+    /**
+     * Show notification for a due reminder with centered modal
+     */
+    private showReminderNotification(reminder: Reminder): void {
+        console.log('[Collab-Mentions] showReminderNotification called for:', reminder.message.substring(0, 30), 'id:', reminder.id);
+
+        // Check if we've already notified for this reminder in this session
+        if (this.notifiedReminderIds.has(reminder.id)) {
+            console.log('[Collab-Mentions] Skipping duplicate notification for reminder:', reminder.id);
+            return;
+        }
+
+        // Track this reminder as notified to prevent duplicates
+        this.notifiedReminderIds.add(reminder.id);
+
+        // Create and open the modal
+        const modal = new ReminderNotificationModal(
+            this.app,
+            reminder,
+            this.reminderManager,
+            () => this.refreshPanel()
+        );
+
+        console.log('[Collab-Mentions] Opening ReminderNotificationModal for:', reminder.id);
+        modal.open();
+    }
+
+    async loadSettings(): Promise<void> {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings(): Promise<void> {
+        await this.saveData(this.settings);
+    }
+
+    async activateMentionPanel(options?: {
+        tab?: 'inbox' | 'sent' | 'team' | 'chat' | 'reminders';
+        channelId?: string;
+    }): Promise<void> {
+        const { workspace } = this.app;
+
+        let leaf = workspace.getLeavesOfType(MENTION_PANEL_VIEW_TYPE)[0];
+
+        if (!leaf) {
+            const rightLeaf = workspace.getRightLeaf(false);
+            if (rightLeaf) {
+                await rightLeaf.setViewState({
+                    type: MENTION_PANEL_VIEW_TYPE,
+                    active: true
+                });
+                leaf = rightLeaf;
+            }
+        }
+
+        if (leaf) {
+            workspace.revealLeaf(leaf);
+
+            // Navigate to specific tab or channel if requested
+            const view = leaf.view as MentionPanelView;
+            if (view) {
+                if (options?.channelId) {
+                    view.switchToChannel(options.channelId);
+                } else if (options?.tab) {
+                    view.switchToTab(options.tab);
+                }
+            }
+        }
+    }
+
+    /**
+     * Toggle the mention panel open/closed
+     */
+    async toggleMentionPanel(): Promise<void> {
+        const { workspace } = this.app;
+        const leaves = workspace.getLeavesOfType(MENTION_PANEL_VIEW_TYPE);
+
+        if (leaves.length > 0) {
+            // Panel exists - check if it's visible in the right sidebar
+            const leaf = leaves[0];
+            const rightSplit = workspace.rightSplit;
+
+            // Check if the right sidebar is collapsed or if our leaf is the active one
+            if (rightSplit && !rightSplit.collapsed) {
+                // Right sidebar is open - close our panel
+                leaf.detach();
+                return;
+            }
+        }
+
+        // Panel doesn't exist or sidebar is collapsed - open it
+        await this.activateMentionPanel();
+    }
+
+    refreshPanel(smartRefresh: boolean = false): void {
+        const leaves = this.app.workspace.getLeavesOfType(MENTION_PANEL_VIEW_TYPE);
+        for (const leaf of leaves) {
+            const view = leaf.view as MentionPanelView;
+            if (view) {
+                if (smartRefresh && view.refreshChat) {
+                    // Smart refresh - only update chat messages without re-rendering input
+                    view.refreshChat();
+                } else if (view.render) {
+                    // Full refresh
+                    view.render();
+                }
+            }
+        }
+        // Update badge whenever panel refreshes
+        this.updateRibbonBadge();
+    }
+
+    /**
+     * Update the unread badge on the ribbon icon
+     */
+    updateRibbonBadge(): void {
+        if (!this.ribbonIconEl) return;
+
+        const badgeEl = this.ribbonIconEl.querySelector('.collab-ribbon-badge') as HTMLElement;
+        if (!badgeEl) return;
+
+        // Count unread mentions
+        const unreadMentions = this.mentionParser.getUnreadMentions().length;
+
+        // Count unread chat messages across all channels
+        let unreadChat = 0;
+        const currentUser = this.userManager.getCurrentUser();
+        if (currentUser) {
+            const channels = this.chatManager.getChannelsForUser(currentUser.vaultName);
+            for (const channel of channels) {
+                // Skip muted channels
+                if (this.chatManager.isChannelMuted(channel.id)) continue;
+                unreadChat += this.chatManager.getUnreadCount(channel.id, currentUser.vaultName);
+            }
+        }
+
+        const totalUnread = unreadMentions + unreadChat;
+
+        if (totalUnread > 0) {
+            badgeEl.textContent = totalUnread > 99 ? '99+' : String(totalUnread);
+            badgeEl.style.display = 'flex';
+        } else {
+            badgeEl.style.display = 'none';
+        }
+    }
+
+    /**
+     * Fast non-cryptographic hash (FNV-1a) for file change detection
+     * Consistent with hashing used in mentionParser, chatManager, userManager
+     * Much faster than SHA-256 - optimized for speed, not security
+     */
+    private computeContentHash(content: string): string {
+        let hash = 2166136261; // FNV offset basis
+        for (let i = 0; i < content.length; i++) {
+            hash ^= content.charCodeAt(i);
+            hash = (hash * 16777619) >>> 0; // FNV prime, keep as 32-bit unsigned
+        }
+        return hash.toString(16);
+    }
+
+    /**
+     * FILE WATCHER - Detect changes to mentions.json while vault is open
+     */
+    private async getMentionsFileHash(): Promise<string | null> {
+        try {
+            const mentionsPath = this.mentionParser.getMentionsFilePath();
+            if (await this.app.vault.adapter.exists(mentionsPath)) {
+                const content = await this.app.vault.adapter.read(mentionsPath);
+                return this.computeContentHash(content);
+            }
+        } catch (e) {
+            console.error('Failed to get mentions file hash:', e);
+        }
+        return null;
+    }
+
+    private async checkForMentionsFileChanges(): Promise<void> {
+        const currentHash = await this.getMentionsFileHash();
+
+        // Skip if hash not initialized yet (will be set by startFileWatcher)
+        if (this.lastMentionsFileHash === null) {
+            return;
+        }
+
+        // Check if file changed
+        if (currentHash && currentHash !== this.lastMentionsFileHash) {
+            console.log('Mentions file changed, reloading...');
+
+            // Reload mentions
+            await this.mentionParser.loadMentions();
+
+            // Check for NEW unread mentions (not already notified)
+            // Use BOTH ID tracking AND content hash tracking for maximum robustness
+            const unread = this.mentionParser.getUnreadMentions();
+            console.log('[Collab-Mentions] Total unread mentions for current user:', unread.length);
+
+            const newUnread: typeof unread = [];
+
+            for (const mention of unread) {
+                // Skip if already notified by ID
+                if (this.notifiedMentionIds.has(mention.id)) {
+                    console.log('[Collab-Mentions] Skipping mention (already notified by ID):', mention.id, 'from:', mention.from);
+                    continue;
+                }
+
+                // Also check by content hash (catches edge cases where IDs might differ)
+                const contentHash = this.mentionParser.getMentionContentHash(mention);
+                if (this.notifiedContentHashes.has(contentHash)) {
+                    console.log('[Collab-Mentions] Skipping mention (already notified by hash):', mention.id, 'from:', mention.from);
+                    continue;
+                }
+
+                console.log('[Collab-Mentions] NEW mention to notify:', mention.id, 'from:', mention.from, 'context:', mention.context.substring(0, 50));
+                newUnread.push(mention);
+                // Track by both ID and hash
+                this.notifiedMentionIds.add(mention.id);
+                this.notifiedContentHashes.add(contentHash);
+            }
+
+            if (newUnread.length > 0 && this.settings.enableNotifications) {
+                console.log('[Collab-Mentions] New unread mentions to notify:', newUnread.length);
+
+                // Batch notifications when there are many to prevent notification storm
+                if (newUnread.length > 3) {
+                    // Show single batched notification
+                    const uniqueSenders = [...new Set(newUnread.map(m => m.from))];
+                    const senderText = uniqueSenders.length === 1
+                        ? `from @${uniqueSenders[0]}`
+                        : `from ${uniqueSenders.length} people`;
+                    this.showCenteredNotification(
+                        '📣 New Mentions',
+                        `You have ${newUnread.length} new mentions ${senderText}`,
+                        () => this.activateMentionPanel({ tab: 'inbox' })
+                    );
+                } else {
+                    // Show individual notifications for small batches (1-3)
+                    for (const mention of newUnread) {
+                        this.showCenteredNotification(
+                            '📣 New Mention',
+                            `@${mention.from} mentioned you: "${this.truncateText(mention.context, 50)}"`,
+                            () => this.activateMentionPanel({ tab: 'inbox' })
+                        );
+                    }
+                }
+
+                // Only play sound once regardless of number of notifications
+                if (this.settings.notificationSound) {
+                    this.notifier.playSound();
+                }
+            }
+
+            // Smart refresh the panel to show any updates (preserves input focus)
+            this.refreshPanel(true);
+
+            // Auto-cleanup if enabled
+            if (this.settings.autoCleanup) {
+                await this.mentionParser.autoCleanupMentions(
+                    this.settings.maxMentionsPerUser,
+                    this.settings.cleanupIntervalHours
+                );
+            }
+
+            this.lastMentionsFileHash = currentHash;
+        }
+    }
+
+    private async getChatFileHash(): Promise<string | null> {
+        try {
+            const chatPath = this.chatManager.getChatFilePath();
+            if (await this.app.vault.adapter.exists(chatPath)) {
+                const content = await this.app.vault.adapter.read(chatPath);
+                return this.computeContentHash(content);
+            }
+        } catch (e) {
+            console.error('Failed to get chat file hash:', e);
+        }
+        return null;
+    }
+
+    private async checkForChatFileChanges(): Promise<void> {
+        const currentHash = await this.getChatFileHash();
+        const currentUser = this.userManager.getCurrentUser();
+
+        // Skip if hash not initialized yet (will be set by startFileWatcher)
+        if (this.lastChatFileHash === null) {
+            return;
+        }
+
+        // Check if file changed
+        if (currentHash && currentHash !== this.lastChatFileHash) {
+            console.log('Chat file changed, reloading...');
+
+            // Reload chat
+            await this.chatManager.loadChat();
+
+            // Check if user was added to any new channels (or re-added after leaving/restore)
+            if (currentUser && this.settings.enableNotifications) {
+                const currentChannels = this.chatManager.getChannelsForUser(currentUser.vaultName);
+                const currentChannelIds = new Set(currentChannels.map(ch => ch.id));
+
+                // Remove channels from known list that user is no longer in (they left)
+                for (const knownId of this.knownChannelIds) {
+                    if (!currentChannelIds.has(knownId)) {
+                        console.log('[Collab-Mentions] User left channel, removing from known:', knownId);
+                        this.knownChannelIds.delete(knownId);
+                        this.lastKnownMessageIds.delete(knownId);
+                    }
+                }
+
+                // Find channels the user is now in but wasn't before (new or re-added)
+                const newChannels = currentChannels.filter(ch => !this.knownChannelIds.has(ch.id));
+
+                for (const channel of newChannels) {
+                    // DEFENSIVE CHECK: Verify user is actually in the channel's members list
+                    // (General channel has empty members = everyone, so skip this check for general)
+                    const isActuallyMember = channel.type === 'general' ||
+                        channel.members.includes(currentUser.vaultName);
+
+                    if (!isActuallyMember) {
+                        console.log('[Collab-Mentions] Skipping channel notification - user not actually a member:',
+                            channel.id, channel.name, 'members:', channel.members);
+                        // Still add to known to prevent repeated checks
+                        this.knownChannelIds.add(channel.id);
+                        continue;
+                    }
+
+                    // Capture channel.id for closure
+                    const channelId = channel.id;
+                    // Show centered notification for new/restored channel
+                    console.log('[Collab-Mentions] User added to channel:', channel.id, channel.name,
+                        'members:', channel.members);
+                    this.showCenteredNotification(
+                        '💬 New Channel',
+                        `You were added to "${channel.name || 'a conversation'}"`,
+                        () => {
+                            // Switch to the new channel when clicked
+                            this.activateMentionPanel({ channelId });
+                        }
+                    );
+                    this.knownChannelIds.add(channel.id);
+
+                    // Initialize message tracking for new channel
+                    const messages = this.chatManager.getMessages(channel.id);
+                    this.lastKnownMessageIds.set(channel.id, new Set(messages.map(m => m.id)));
+
+                    if (this.settings.notificationSound) {
+                        this.notifier.playSound();
+                    }
+                }
+
+                // Check for NEW messages in existing channels (by message ID AND content hash)
+                let newMessagesFromOthers: Array<{ channelId: string; channelName: string; message: any; contentHash: string }> = [];
+
+                for (const channel of currentChannels) {
+                    if (!this.knownChannelIds.has(channel.id)) continue; // Skip newly added channels
+                    if (this.chatManager.isChannelMuted(channel.id)) continue; // Skip muted channels
+
+                    const messages = this.chatManager.getMessages(channel.id);
+                    const knownIds = this.lastKnownMessageIds.get(channel.id) || new Set();
+
+                    for (const msg of messages) {
+                        // Skip if from current user, system, or deleted
+                        if (msg.from === currentUser.vaultName || msg.from === 'system' || msg.deleted) continue;
+
+                        // Check by ID first
+                        if (knownIds.has(msg.id)) continue;
+
+                        // Also check by content hash for extra robustness
+                        const contentHash = this.chatManager.getMessageContentHash(msg);
+                        if (this.notifiedMessageHashes.has(contentHash)) continue;
+
+                        newMessagesFromOthers.push({
+                            channelId: channel.id,
+                            channelName: channel.name,
+                            message: msg,
+                            contentHash: contentHash
+                        });
+                    }
+
+                    // Update known message IDs
+                    this.lastKnownMessageIds.set(channel.id, new Set(messages.map(m => m.id)));
+                }
+
+                // Notify about new messages (batch if many)
+                if (newMessagesFromOthers.length > 0) {
+                    console.log('[Collab-Mentions] New messages from others:', newMessagesFromOthers.length,
+                        newMessagesFromOthers.map(m => ({
+                            id: m.message.id,
+                            from: m.message.from,
+                            channel: m.channelName,
+                            hasImages: !!(m.message.images && m.message.images.length > 0),
+                            hasText: !!m.message.message
+                        })));
+
+                    // Track all messages by content hash first
+                    for (const { contentHash } of newMessagesFromOthers) {
+                        this.notifiedMessageHashes.add(contentHash);
+                    }
+
+                    // Batch notifications when there are many to prevent notification storm
+                    if (newMessagesFromOthers.length > 5) {
+                        // Show single batched notification for many messages
+                        const uniqueSenders = [...new Set(newMessagesFromOthers.map(m => m.message.from))];
+                        const uniqueChannels = [...new Set(newMessagesFromOthers.map(m => m.channelName))];
+                        const channelText = uniqueChannels.length === 1
+                            ? `in ${uniqueChannels[0]}`
+                            : `across ${uniqueChannels.length} channels`;
+                        const senderText = uniqueSenders.length === 1
+                            ? `from @${uniqueSenders[0]}`
+                            : `from ${uniqueSenders.length} people`;
+
+                        // Navigate to the first channel with new messages
+                        const firstChannelId = newMessagesFromOthers[0].channelId;
+
+                        this.showCenteredNotification(
+                            '💬 New Messages',
+                            `${newMessagesFromOthers.length} new messages ${senderText} ${channelText}`,
+                            () => this.activateMentionPanel({ channelId: firstChannelId })
+                        );
+                    } else {
+                        // Show individual notifications for small batches (1-5)
+                        for (const { channelId, channelName, message } of newMessagesFromOthers) {
+                            // Build notification text - handle image-only messages
+                            let notificationText: string;
+                            const hasImages = message.images && message.images.length > 0;
+                            const hasText = message.message && message.message.trim().length > 0;
+
+                            if (hasText && hasImages) {
+                                // Both text and images
+                                notificationText = `@${message.from} in ${channelName}: "${this.truncateText(message.message, 30)}" 📷`;
+                            } else if (hasImages) {
+                                // Image only
+                                const imageCount = message.images!.length;
+                                notificationText = `@${message.from} sent ${imageCount > 1 ? imageCount + ' images' : 'an image'} in ${channelName}`;
+                            } else {
+                                // Text only (or empty - shouldn't happen but handle it)
+                                notificationText = `@${message.from} in ${channelName}: "${this.truncateText(message.message || '', 40)}"`;
+                            }
+
+                            this.showCenteredNotification(
+                                '💬 New Message',
+                                notificationText,
+                                () => this.activateMentionPanel({ channelId })
+                            );
+                        }
+                    }
+
+                    // Play sound once for the batch
+                    if (this.settings.notificationSound) {
+                        this.notifier.playSound();
+                    }
+                }
+            }
+
+            // Smart refresh panel to show new messages (preserves input focus)
+            this.refreshPanel(true);
+
+            this.lastChatFileHash = currentHash;
+        }
+    }
+
+    private async getUsersFileHash(): Promise<string | null> {
+        try {
+            const usersPath = this.userManager.getUsersFilePath();
+            if (await this.app.vault.adapter.exists(usersPath)) {
+                const content = await this.app.vault.adapter.read(usersPath);
+                return this.computeContentHash(content);
+            }
+        } catch (e) {
+            console.error('Failed to get users file hash:', e);
+        }
+        return null;
+    }
+
+    private async checkForUsersFileChanges(): Promise<void> {
+        const currentHash = await this.getUsersFileHash();
+
+        // Initialize on first run
+        if (this.lastUsersFileHash === null) {
+            this.lastUsersFileHash = currentHash;
+            return;
+        }
+
+        // Check if file changed
+        if (currentHash && currentHash !== this.lastUsersFileHash) {
+            console.log('Users file changed, reloading...');
+
+            // Reload users
+            await this.userManager.loadUsers();
+
+            // Refresh the panel (Team tab will show updated user list)
+            this.refreshPanel();
+
+            this.lastUsersFileHash = currentHash;
+        }
+    }
+
+    private async getRemindersFileHash(): Promise<string | null> {
+        try {
+            const remindersPath = this.reminderManager.getRemindersFilePath();
+            if (await this.app.vault.adapter.exists(remindersPath)) {
+                const content = await this.app.vault.adapter.read(remindersPath);
+                return this.computeContentHash(content);
+            }
+        } catch (e) {
+            console.error('Failed to get reminders file hash:', e);
+        }
+        return null;
+    }
+
+    private async checkForRemindersFileChanges(): Promise<void> {
+        const currentHash = await this.getRemindersFileHash();
+
+        // Skip if hash not initialized yet
+        if (this.lastRemindersFileHash === null) {
+            return;
+        }
+
+        // Check if file changed
+        if (currentHash && currentHash !== this.lastRemindersFileHash) {
+            console.log('[Collab-Mentions] Reminders file changed, reloading...');
+
+            // Reload reminders from disk
+            await this.reminderManager.loadReminders();
+
+            // Check for due reminders (this will trigger callback for each)
+            const dueReminders = await this.reminderManager.checkDueReminders();
+
+            // Track notified reminders to prevent duplicates
+            for (const reminder of dueReminders) {
+                if (!this.notifiedReminderIds.has(reminder.id)) {
+                    this.notifiedReminderIds.add(reminder.id);
+                    console.log('[Collab-Mentions] Notified for reminder:', reminder.id, reminder.message.substring(0, 30));
+                }
+            }
+
+            // Refresh panel to show any new/changed reminders
+            this.refreshPanel();
+
+            this.lastRemindersFileHash = currentHash;
+        }
+    }
+
+    /**
+     * Show a centered notification modal (stacks multiple notifications)
+     */
+    private activeNotifications: HTMLElement[] = [];
+
+    private showCenteredNotification(title: string, message: string, onClick?: () => void): void {
+        console.log('[Collab-Mentions] showCenteredNotification called:', title, message);
+
+        // Create notification container (not full overlay - allows stacking)
+        const notification = document.createElement('div');
+        notification.className = 'collab-stacked-notification';
+
+        // Calculate position based on existing notifications
+        const existingCount = this.activeNotifications.length;
+        const topOffset = 20 + (existingCount * 90); // Stack vertically
+        notification.style.top = `${topOffset}px`;
+
+        const titleEl = document.createElement('h3');
+        titleEl.textContent = title;
+        notification.appendChild(titleEl);
+
+        const messageEl = document.createElement('p');
+        messageEl.textContent = message;
+        notification.appendChild(messageEl);
+
+        const buttonRow = document.createElement('div');
+        buttonRow.className = 'collab-centered-notification-buttons';
+
+        if (onClick) {
+            const viewBtn = document.createElement('button');
+            viewBtn.textContent = 'View';
+            viewBtn.className = 'collab-centered-notification-view-btn';
+            viewBtn.addEventListener('click', () => {
+                onClick();
+                this.removeNotification(notification);
+            });
+            buttonRow.appendChild(viewBtn);
+        }
+
+        const dismissBtn = document.createElement('button');
+        dismissBtn.textContent = 'Dismiss';
+        dismissBtn.className = 'collab-centered-notification-dismiss-btn';
+        dismissBtn.addEventListener('click', () => this.removeNotification(notification));
+        buttonRow.appendChild(dismissBtn);
+
+        notification.appendChild(buttonRow);
+
+        // Track this notification
+        this.activeNotifications.push(notification);
+
+        // Auto-dismiss after 10 seconds
+        setTimeout(() => {
+            this.removeNotification(notification);
+        }, 10000);
+
+        document.body.appendChild(notification);
+    }
+
+    private removeNotification(notification: HTMLElement): void {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+        // Remove from tracking array
+        const index = this.activeNotifications.indexOf(notification);
+        if (index > -1) {
+            this.activeNotifications.splice(index, 1);
+        }
+        // Reposition remaining notifications
+        this.activeNotifications.forEach((n, i) => {
+            n.style.top = `${20 + (i * 90)}px`;
+        });
+    }
+
+    private truncateText(text: string, maxLength: number): string {
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength - 3) + '...';
+    }
+
+    startFileWatcher(): void {
+        if (this.fileWatcherInterval !== null) {
+            return; // Already running
+        }
+
+        console.log('Starting mentions file watcher...');
+
+        // Check every 3 seconds for real-time updates
+        this.fileWatcherInterval = window.setInterval(async () => {
+            await this.checkForMentionsFileChanges();
+            await this.checkForChatFileChanges();
+            await this.checkForUsersFileChanges();
+            await this.checkForRemindersFileChanges();
+            // Also reload presence data to check other users' online status
+            await this.userManager.loadPresence();
+        }, 3000);
+
+        // Initial hashes - initialize ALL file hashes
+        this.getMentionsFileHash().then(hash => {
+            this.lastMentionsFileHash = hash;
+            console.log('[Collab-Mentions] Initialized mentions hash');
+        });
+        this.getChatFileHash().then(hash => {
+            this.lastChatFileHash = hash;
+            console.log('[Collab-Mentions] Initialized chat hash');
+        });
+        this.getUsersFileHash().then(hash => {
+            this.lastUsersFileHash = hash;
+            console.log('[Collab-Mentions] Initialized users hash');
+        });
+        this.getRemindersFileHash().then(hash => {
+            this.lastRemindersFileHash = hash;
+            console.log('[Collab-Mentions] Initialized reminders hash');
+        });
+
+        // Initialize notified mention IDs, content hashes, and known channel IDs
+        const unread = this.mentionParser.getUnreadMentions();
+        unread.forEach(m => {
+            this.notifiedMentionIds.add(m.id);
+            // Also initialize content hash tracking for robustness
+            const contentHash = this.mentionParser.getMentionContentHash(m);
+            this.notifiedContentHashes.add(contentHash);
+        });
+        console.log('[Collab-Mentions] Initialized mention tracking:', unread.length, 'mentions');
+
+        const currentUser = this.userManager.getCurrentUser();
+        if (currentUser) {
+            const channels = this.chatManager.getChannelsForUser(currentUser.vaultName);
+            channels.forEach(ch => this.knownChannelIds.add(ch.id));
+
+            // Initialize known message IDs and content hashes per channel
+            for (const channel of channels) {
+                const messages = this.chatManager.getMessages(channel.id);
+                const messageIds = new Set(messages.map(m => m.id));
+                this.lastKnownMessageIds.set(channel.id, messageIds);
+
+                // Also initialize message content hashes for robustness
+                for (const msg of messages) {
+                    if (msg.from !== currentUser.vaultName && msg.from !== 'system') {
+                        const contentHash = this.chatManager.getMessageContentHash(msg);
+                        this.notifiedMessageHashes.add(contentHash);
+                    }
+                }
+            }
+            console.log('[Collab-Mentions] Initialized channel tracking:', channels.length, 'channels');
+
+            // Initialize notified reminder IDs (reminders that have already notified this user)
+            const reminders = this.reminderManager.getReminders();
+            for (const reminder of reminders) {
+                if (reminder.completed) continue;
+                // Check if already notified
+                if (reminder.isGlobal) {
+                    if (reminder.notifiedUsers?.includes(currentUser.vaultName)) {
+                        this.notifiedReminderIds.add(reminder.id);
+                    }
+                } else if (reminder.user === currentUser.vaultName && reminder.notified) {
+                    this.notifiedReminderIds.add(reminder.id);
+                }
+            }
+            console.log('[Collab-Mentions] Initialized reminder tracking:', this.notifiedReminderIds.size, 'notified reminders');
+        }
+
+        // Start cleanup interval to prevent memory leaks
+        this.startCleanupInterval();
+    }
+
+    stopFileWatcher(): void {
+        if (this.fileWatcherInterval !== null) {
+            console.log('Stopping mentions file watcher...');
+            window.clearInterval(this.fileWatcherInterval);
+            this.fileWatcherInterval = null;
+        }
+    }
+
+    restartFileWatcher(): void {
+        this.stopFileWatcher();
+        if (this.settings.enableFileWatcher && this.userManager.isRegistered()) {
+            this.startFileWatcher();
+        }
+    }
+
+    /**
+     * Start periodic cleanup of notification tracking Sets to prevent memory leaks.
+     * Runs every 30 minutes and removes IDs that no longer exist in the system.
+     */
+    startCleanupInterval(): void {
+        if (this.cleanupInterval !== null) {
+            return; // Already running
+        }
+
+        console.log('[Collab-Mentions] Starting periodic cleanup interval...');
+
+        // Run cleanup every 30 minutes
+        this.cleanupInterval = window.setInterval(() => {
+            this.cleanupNotificationTracking();
+        }, 30 * 60 * 1000); // 30 minutes
+
+        // Also run initial cleanup after a delay
+        setTimeout(() => this.cleanupNotificationTracking(), 60 * 1000); // 1 minute after start
+    }
+
+    /**
+     * Stop the cleanup interval
+     */
+    stopCleanupInterval(): void {
+        if (this.cleanupInterval !== null) {
+            console.log('[Collab-Mentions] Stopping cleanup interval...');
+            window.clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+    }
+
+    /**
+     * Clean up notification tracking Sets by removing IDs that no longer exist.
+     * This prevents unbounded memory growth over time.
+     */
+    private cleanupNotificationTracking(): void {
+        const startSize = {
+            mentionIds: this.notifiedMentionIds.size,
+            contentHashes: this.notifiedContentHashes.size,
+            messageHashes: this.notifiedMessageHashes.size,
+            reminderIds: this.notifiedReminderIds.size,
+            channelIds: this.knownChannelIds.size
+        };
+
+        // Get current valid IDs from the system
+        const allMentions = this.mentionParser.getAllMentions();
+        const validMentionIds = new Set(allMentions.map(m => m.id));
+        const validMentionHashes = new Set(allMentions.map(m => this.mentionParser.getMentionContentHash(m)));
+
+        // Clean up mention tracking
+        this.notifiedMentionIds = new Set(
+            [...this.notifiedMentionIds].filter(id => validMentionIds.has(id))
+        );
+        this.notifiedContentHashes = new Set(
+            [...this.notifiedContentHashes].filter(hash => validMentionHashes.has(hash))
+        );
+
+        // Get current valid message IDs from all channels
+        const currentUser = this.userManager.getCurrentUser();
+        if (currentUser) {
+            const channels = this.chatManager.getChannelsForUser(currentUser.vaultName);
+            const validChannelIds = new Set(channels.map(ch => ch.id));
+
+            // Clean up channel tracking
+            this.knownChannelIds = new Set(
+                [...this.knownChannelIds].filter(id => validChannelIds.has(id))
+            );
+
+            // Collect all valid message hashes
+            const validMessageHashes = new Set<string>();
+            for (const channel of channels) {
+                const messages = this.chatManager.getMessages(channel.id);
+                for (const msg of messages) {
+                    validMessageHashes.add(this.chatManager.getMessageContentHash(msg));
+                }
+            }
+
+            // Clean up message hash tracking (keep hashes from last 24 hours even if message deleted)
+            // This is more aggressive - only keep hashes for messages that still exist
+            this.notifiedMessageHashes = new Set(
+                [...this.notifiedMessageHashes].filter(hash => validMessageHashes.has(hash))
+            );
+
+            // Clean up lastKnownMessageIds map - remove channels that no longer exist
+            for (const channelId of this.lastKnownMessageIds.keys()) {
+                if (!validChannelIds.has(channelId)) {
+                    this.lastKnownMessageIds.delete(channelId);
+                }
+            }
+        }
+
+        // Get current valid reminder IDs
+        const allReminders = this.reminderManager.getReminders();
+        const validReminderIds = new Set(allReminders.map(r => r.id));
+
+        // Clean up reminder tracking
+        this.notifiedReminderIds = new Set(
+            [...this.notifiedReminderIds].filter(id => validReminderIds.has(id))
+        );
+
+        const endSize = {
+            mentionIds: this.notifiedMentionIds.size,
+            contentHashes: this.notifiedContentHashes.size,
+            messageHashes: this.notifiedMessageHashes.size,
+            reminderIds: this.notifiedReminderIds.size,
+            channelIds: this.knownChannelIds.size
+        };
+
+        // Log cleanup results if anything was cleaned
+        const cleaned =
+            (startSize.mentionIds - endSize.mentionIds) +
+            (startSize.contentHashes - endSize.contentHashes) +
+            (startSize.messageHashes - endSize.messageHashes) +
+            (startSize.reminderIds - endSize.reminderIds) +
+            (startSize.channelIds - endSize.channelIds);
+
+        if (cleaned > 0) {
+            console.log('[Collab-Mentions] Cleanup completed:', {
+                mentionIds: `${startSize.mentionIds} → ${endSize.mentionIds}`,
+                contentHashes: `${startSize.contentHashes} → ${endSize.contentHashes}`,
+                messageHashes: `${startSize.messageHashes} → ${endSize.messageHashes}`,
+                reminderIds: `${startSize.reminderIds} → ${endSize.reminderIds}`,
+                channelIds: `${startSize.channelIds} → ${endSize.channelIds}`,
+                totalCleaned: cleaned
+            });
+        }
+
+        this.lastCleanupTime = Date.now();
+    }
+
+    /**
+     * HEARTBEAT - Update presence every 10 seconds for online status
+     * FILE ACTIVITY - Record when user interacts with files (for active vs snooze status)
+     */
+    startHeartbeat(): void {
+        if (this.heartbeatInterval !== null) {
+            return; // Already running
+        }
+
+        console.log('Starting presence heartbeat...');
+
+        // Get current active file
+        const getActiveFile = (): string | undefined => {
+            const activeFile = this.app.workspace.getActiveFile();
+            return activeFile?.path;
+        };
+
+        // Initial heartbeat with file activity (user just opened vault)
+        this.userManager.recordFileActivity(getActiveFile());
+
+        // Heartbeat every 10 seconds - keeps vault "alive" but doesn't update activity
+        this.heartbeatInterval = window.setInterval(async () => {
+            await this.userManager.updateHeartbeat(getActiveFile());
+        }, 10000);
+
+        // Record file activity when user switches files (actual interaction)
+        this.registerEvent(
+            this.app.workspace.on('active-leaf-change', async () => {
+                // Check if user was snoozing before this activity
+                const currentUser = this.userManager.getCurrentUser();
+                if (currentUser) {
+                    const statusBeforeActivity = this.userManager.getUserStatus(currentUser.vaultName);
+                    this.wasSnoozing = statusBeforeActivity === 'snooze';
+                }
+
+                await this.userManager.recordFileActivity(getActiveFile());
+
+                // If returning from snooze, check for unread messages
+                if (this.wasSnoozing && currentUser && this.settings.enableNotifications) {
+                    const now = Date.now();
+                    // Only show notification if we haven't shown one in the last 5 minutes
+                    if (now - this.lastUnreadNotificationTime > 5 * 60 * 1000) {
+                        const unreadCount = this.chatManager.getTotalUnreadCount(currentUser.vaultName);
+                        if (unreadCount > 0) {
+                            this.showCenteredNotification(
+                                '💬 Welcome Back!',
+                                `You have ${unreadCount} unread message${unreadCount > 1 ? 's' : ''} while you were away`,
+                                () => this.activateMentionPanel({ tab: 'chat' })
+                            );
+                            this.lastUnreadNotificationTime = now;
+                        }
+                    }
+                    this.wasSnoozing = false;
+                }
+            })
+        );
+    }
+
+    stopHeartbeat(): void {
+        if (this.heartbeatInterval !== null) {
+            console.log('Stopping presence heartbeat...');
+            window.clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+    }
+}
+
+/**
+ * Type for mention suggestions (users, special mentions, or channels)
+ */
+type MentionSuggestion = {
+    vaultName: string;
+    color?: string;
+    os?: string;
+    isSpecial?: boolean;
+    description?: string;
+    type?: 'user' | 'special' | 'channel';
+    channelId?: string;
+};
+
+/**
+ * Editor suggester for @mentions autocomplete in markdown files
+ * Supports @user, @everyone, and @#channel mentions
+ */
+class MentionSuggest extends EditorSuggest<MentionSuggestion> {
+    private userManager: UserManager;
+    private chatManager: ChatManager;
+
+    constructor(app: App, userManager: UserManager, chatManager: ChatManager) {
+        super(app);
+        this.userManager = userManager;
+        this.chatManager = chatManager;
+    }
+
+    onTrigger(
+        cursor: EditorPosition,
+        editor: Editor,
+        file: TFile
+    ): EditorSuggestTriggerInfo | null {
+        const line = editor.getLine(cursor.line);
+        const subString = line.substring(0, cursor.ch);
+
+        // Check for @# (channel mention) or @ (user mention)
+        const channelMatch = subString.match(/@#([\w-]*)$/);
+        const userMatch = subString.match(/@(\w*)$/);
+
+        if (channelMatch) {
+            return {
+                start: { line: cursor.line, ch: cursor.ch - channelMatch[0].length },
+                end: cursor,
+                query: '#' + channelMatch[1]
+            };
+        }
+
+        if (userMatch) {
+            return {
+                start: { line: cursor.line, ch: cursor.ch - userMatch[0].length },
+                end: cursor,
+                query: userMatch[1]
+            };
+        }
+
+        return null;
+    }
+
+    getSuggestions(context: EditorSuggestContext): MentionSuggestion[] {
+        const query = context.query.toLowerCase();
+
+        // Check if this is a channel search (starts with #)
+        if (query.startsWith('#')) {
+            const channelQuery = query.substring(1);
+            const currentUser = this.userManager.getCurrentUser();
+            if (!currentUser) return [];
+
+            const channels = this.chatManager.getChannelsForUser(currentUser.vaultName);
+
+            return channels
+                .filter(ch => ch.name.toLowerCase().includes(channelQuery))
+                .map(ch => ({
+                    vaultName: ch.name,
+                    color: '#3b82f6',
+                    type: 'channel' as const,
+                    channelId: ch.id,
+                    description: ch.type === 'dm' ? 'Direct message' : ch.type === 'group' ? 'Group' : 'Channel'
+                }));
+        }
+
+        // User and special mentions
+        const users = this.userManager.getAllUsers();
+        const currentUser = this.userManager.getCurrentUser();
+
+        // Special mentions
+        const specialMentions: MentionSuggestion[] = [
+            { vaultName: 'everyone', color: '#ef4444', isSpecial: true, type: 'special', description: 'Notify all users' }
+        ];
+
+        // Filter special mentions by query
+        const filteredSpecial = specialMentions.filter(s =>
+            s.vaultName.toLowerCase().includes(query)
+        );
+
+        // Filter users by query (excluding current user)
+        const filteredUsers: MentionSuggestion[] = users
+            .filter(user => {
+                if (currentUser && user.vaultName === currentUser.vaultName) {
+                    return false;
+                }
+                return user.vaultName.toLowerCase().includes(query);
+            })
+            .map(user => ({
+                vaultName: user.vaultName,
+                color: user.color,
+                os: user.os,
+                type: 'user' as const
+            }));
+
+        return [...filteredSpecial, ...filteredUsers];
+    }
+
+    renderSuggestion(suggestion: MentionSuggestion, el: HTMLElement): void {
+        const container = el.createEl('div', { cls: 'collab-suggestion' });
+
+        if (suggestion.type === 'channel') {
+            container.createEl('span', {
+                text: '#',
+                cls: 'collab-channel-icon'
+            });
+            container.createEl('span', {
+                text: suggestion.vaultName,
+                cls: 'collab-suggestion-name'
+            });
+            if (suggestion.description) {
+                container.createEl('span', {
+                    text: suggestion.description,
+                    cls: 'collab-suggestion-os'
+                });
+            }
+        } else {
+            const colorDot = container.createEl('span', { cls: 'collab-user-dot' });
+            colorDot.style.backgroundColor = suggestion.color || '#7c3aed';
+
+            container.createEl('span', {
+                text: `@${suggestion.vaultName}`,
+                cls: 'collab-suggestion-name'
+            });
+
+            if (suggestion.isSpecial && suggestion.description) {
+                container.createEl('span', {
+                    text: suggestion.description,
+                    cls: 'collab-suggestion-os'
+                });
+            } else if (suggestion.os) {
+                container.createEl('span', {
+                    text: suggestion.os,
+                    cls: 'collab-suggestion-os'
+                });
+            }
+        }
+    }
+
+    selectSuggestion(suggestion: MentionSuggestion, evt: MouseEvent | KeyboardEvent): void {
+        if (!this.context) return;
+
+        const editor = this.context.editor;
+        const start = this.context.start;
+        const end = this.context.end;
+
+        if (suggestion.type === 'channel') {
+            editor.replaceRange(`@#${suggestion.vaultName} `, start, end);
+        } else {
+            editor.replaceRange(`@${suggestion.vaultName} `, start, end);
+        }
+    }
+}
+
+/**
+ * Settings tab for the plugin
+ */
+class CollabMentionsSettingTab extends PluginSettingTab {
+    plugin: CollabMentionsPlugin;
+
+    constructor(app: App, plugin: CollabMentionsPlugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
+
+    display(): void {
+        const { containerEl } = this;
+
+        containerEl.empty();
+
+        containerEl.createEl('h2', { text: 'Collab Mentions Settings' });
+
+        // User info
+        const currentUser = this.plugin.userManager.getCurrentUser();
+        const isAdmin = this.plugin.userManager.isCurrentUserAdmin();
+
+        if (currentUser) {
+            const userInfoEl = containerEl.createEl('div', { cls: 'collab-settings-user-info' });
+            const userNameEl = userInfoEl.createEl('p');
+            userNameEl.createEl('span', { text: `Registered as: @${currentUser.vaultName}` });
+            if (isAdmin) {
+                const isPrimary = this.plugin.userManager.isCurrentUserPrimaryAdmin();
+                userNameEl.createEl('span', {
+                    text: isPrimary ? ' (Primary Admin)' : ' (Secondary Admin)',
+                    cls: isPrimary ? 'collab-admin-badge collab-primary-admin' : 'collab-admin-badge'
+                });
+            }
+            if (currentUser.registrationNumber) {
+                userNameEl.createEl('span', {
+                    text: ` #${currentUser.registrationNumber}`,
+                    cls: 'collab-registration-number'
+                });
+            }
+            userInfoEl.createEl('p', {
+                text: `Machine: ${currentUser.localIdentifier}`,
+                cls: 'setting-item-description'
+            });
+        } else {
+            const registerBtn = containerEl.createEl('button', {
+                text: 'Register Now',
+                cls: 'mod-cta'
+            });
+            registerBtn.addEventListener('click', () => {
+                new RegisterModal(
+                    this.app,
+                    this.plugin.userManager,
+                    () => this.display()
+                ).open();
+            });
+        }
+
+        containerEl.createEl('h3', { text: 'Real-Time Monitoring' });
+
+        new Setting(containerEl)
+            .setName('Enable file watcher')
+            .setDesc('Monitor for changes in real-time (checks every 3 seconds)')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableFileWatcher)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableFileWatcher = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.restartFileWatcher();
+                })
+            );
+
+        containerEl.createEl('h3', { text: 'Notifications' });
+
+        new Setting(containerEl)
+            .setName('Enable notifications')
+            .setDesc('Show notifications for new mentions when opening the vault')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableNotifications)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableNotifications = value;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName('Notification sound')
+            .setDesc('Play a sound when you have new mentions')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.notificationSound)
+                .onChange(async (value) => {
+                    this.plugin.settings.notificationSound = value;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        containerEl.createEl('h3', { text: 'Auto-Cleanup' });
+
+        new Setting(containerEl)
+            .setName('Enable auto-cleanup')
+            .setDesc('Automatically limit mentions per user to prevent file bloat')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.autoCleanup)
+                .onChange(async (value) => {
+                    this.plugin.settings.autoCleanup = value;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName('Max mentions per user')
+            .setDesc('Keep only this many recent mentions per user (unread always kept)')
+            .addSlider(slider => slider
+                .setLimits(10, 100, 5)
+                .setValue(this.plugin.settings.maxMentionsPerUser)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.maxMentionsPerUser = value;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName('Cleanup interval')
+            .setDesc('How often to run auto-cleanup (hours)')
+            .addSlider(slider => slider
+                .setLimits(1, 168, 1)
+                .setValue(this.plugin.settings.cleanupIntervalHours)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.cleanupIntervalHours = value;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        containerEl.createEl('h3', { text: 'Appearance' });
+
+        new Setting(containerEl)
+            .setName('Highlight mentions')
+            .setDesc('Visually highlight @mentions in the editor')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.showMentionHighlights)
+                .onChange(async (value) => {
+                    this.plugin.settings.showMentionHighlights = value;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        new Setting(containerEl)
+            .setName('Mention highlight color')
+            .setDesc('Color used to highlight @mentions')
+            .addText(text => text
+                .setPlaceholder('#7c3aed')
+                .setValue(this.plugin.settings.mentionColor)
+                .onChange(async (value) => {
+                    this.plugin.settings.mentionColor = value;
+                    await this.plugin.saveSettings();
+                })
+            );
+
+        containerEl.createEl('h3', { text: 'Maintenance' });
+
+        // Cleanup scope selector
+        let cleanupScope: 'my-received' | 'my-sent' | 'all' = 'my-received';
+        let cleanupDays = 30;
+
+        new Setting(containerEl)
+            .setName('Cleanup scope')
+            .setDesc('Choose which mentions to clean up' + (isAdmin ? '' : ' (Admin-only options hidden)'))
+            .addDropdown(dropdown => {
+                dropdown
+                    .addOption('my-received', 'My received mentions (Inbox)')
+                    .addOption('my-sent', 'My sent mentions');
+                // Only admins can clean up everyone's mentions
+                if (isAdmin) {
+                    dropdown.addOption('all', 'All mentions (everyone) [Admin]');
+                }
+                dropdown
+                    .setValue(cleanupScope)
+                    .onChange((value) => {
+                        cleanupScope = value as 'my-received' | 'my-sent' | 'all';
+                    });
+            });
+
+        new Setting(containerEl)
+            .setName('Cleanup age')
+            .setDesc('Only remove read mentions older than X days (0 = all read mentions)')
+            .addSlider(slider => slider
+                .setLimits(0, 90, 1)
+                .setValue(cleanupDays)
+                .setDynamicTooltip()
+                .onChange((value) => {
+                    cleanupDays = value;
+                })
+            );
+
+        new Setting(containerEl)
+            .setName('Run cleanup')
+            .setDesc('Remove read mentions based on scope and age settings above')
+            .addButton(btn => btn
+                .setButtonText('Clean up')
+                .onClick(async () => {
+                    const currentUser = this.plugin.userManager.getCurrentUser();
+                    if (!currentUser && cleanupScope !== 'all') {
+                        new Notice('You must be registered to clean up your mentions');
+                        return;
+                    }
+
+                    const targetUser = currentUser?.vaultName || '';
+                    const scopeLabel = cleanupScope === 'my-received' ? 'received' :
+                                       cleanupScope === 'my-sent' ? 'sent' : 'all';
+
+                    const removed = await this.plugin.mentionParser.cleanupMentionsScoped(
+                        cleanupScope,
+                        targetUser,
+                        cleanupDays
+                    );
+
+                    new Notice(`Removed ${removed} ${scopeLabel} mentions`);
+                    this.plugin.refreshPanel();
+                })
+            );
+
+        // Force auto-cleanup - admin only since it affects everyone
+        if (isAdmin) {
+            new Setting(containerEl)
+                .setName('Force auto-cleanup now')
+                .setDesc('[Admin] Run auto-cleanup immediately (keeps last N per user for everyone)')
+                .addButton(btn => btn
+                    .setButtonText('Run Auto-Cleanup')
+                    .onClick(async () => {
+                        const removed = await this.plugin.mentionParser.autoCleanupMentions(
+                            this.plugin.settings.maxMentionsPerUser,
+                            0 // Force run by setting interval to 0
+                        );
+                        new Notice(`Auto-cleanup: removed ${removed} mentions`);
+                        this.plugin.refreshPanel();
+                    })
+                );
+        }
+
+        new Setting(containerEl)
+            .setName('Manage team members')
+            .setDesc('View and manage registered users')
+            .addButton(btn => btn
+                .setButtonText('Manage')
+                .onClick(() => {
+                    new UserManagementModal(
+                        this.app,
+                        this.plugin.userManager,
+                        () => this.display()
+                    ).open();
+                })
+            );
+    }
+}
