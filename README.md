@@ -1,6 +1,7 @@
 # Collab Mentions
 
-**Know exactly what to look at in your shared Obsidian vault.**
+**Know exactly where and what to look at in your shared Obsidian vault.**
+**Tested With Google Dive**
 
 When you share an Obsidian vault with teammates via Google Drive, OneDrive, Dropbox, or any file sync service, you face a fundamental problem: **How do you know what changed? What should you be looking at? Did your teammate see the note you updated?**
 
@@ -28,9 +29,9 @@ That's the core. Everything else (chat, presence, reminders) is built on top of 
 ## Important: Sync Speed
 
 Because this plugin works through file sync services (not direct servers), **updates are not instant**. Expect:
-- **3-10 seconds** for changes to sync on fast connections
+- **3-10 seconds** for changes to sync on fast connections and sync service you decided to use
 - **Longer delays** depending on your sync service and internet speed
-- **Occasional conflicts** when both users edit simultaneously (handled gracefully)
+- **Occasional conflicts** A work in progress
 
 This is the tradeoff for serverless simplicity. If you need instant, real-time collaboration, you'd need a server-based solution. Collab Mentions prioritizes **privacy, simplicity, and zero infrastructure** over speed.
 
@@ -42,7 +43,7 @@ This is the tradeoff for serverless simplicity. If you need instant, real-time c
 - **Works Offline** — Full functionality, syncs when reconnected
 - **No Login Required** — Your identity is tied to your machine
 
-Perfect for small teams, couples, families, research groups, or anyone sharing an Obsidian vault who wants to actually know what they should be looking at.
+Perfect for small teams, I would say no more than 7 - 10 (Was only tested with 3) people, couples, families, research groups, or anyone sharing an Obsidian vault who wants to actually know what they should be looking at.
 
 ---
 
@@ -67,7 +68,7 @@ This is why the plugin exists. When you want a teammate to look at something:
 
 1. Type `@` in any note
 2. Select their name from autocomplete
-3. Save the note
+3. Save the note, this will happen automatically through your sync service. Like I said it may take a few seconds and the longest I have seen is a minute but usualy 10 - 15 seconds on average.
 4. They get notified and know exactly where to look
 
 **What you get:**
@@ -93,11 +94,11 @@ Sometimes you need to have a quick conversation without cluttering your notes wi
 - **Export** — Save chat history to markdown before deleting
 
 ### Presence & Status
-- **Real-Time Status Detection**
+- **Real-Time Status Detection a work in progress**
   - **Active** (green) — File activity within last 5 minutes
   - **Snooze** (orange) — Vault open but idle for 5+ minutes
   - **Offline** (gray) — Vault closed
-- **Manual Status Override** — Set yourself as Active, Snooze, or Appear Offline
+- **Manual Status Override for when automatic does not seem to be working correctly** — Set yourself as Active, Snooze, or Appear Offline
 - **Activity Tracking** — Status based on actual file interactions
 
 ### Reminders
@@ -110,7 +111,7 @@ Sometimes you need to have a quick conversation without cluttering your notes wi
 
 ### Admin System
 - **Role Hierarchy**
-  - **Primary Admin** — Full control, can promote/demote users
+  - **Primary Admin** — Full control, can promote/demote users (The first user to register is Primary)
   - **Secondary Admin** — Can remove users, cannot manage admins
   - **Member** — Standard user
 - **Automatic Succession** — If primary admin leaves, next user is auto-promoted
