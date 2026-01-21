@@ -1,7 +1,7 @@
 {
   "id": "collab-mentions",
   "name": "Collab Mentions",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "minAppVersion": "0.15.0",
   "description": "Serverless collaboration through @mentions for shared vaults on Google Drive, OneDrive, or Dropbox",
   "author": "Bulwark Black LLC",
