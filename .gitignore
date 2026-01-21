@@ -1,9 +1,6 @@
 # Dependencies - users run `npm install` to get these
 node_modules/
 
-# Build output - users run `npm run build` to generate
-main.js
-
 # OS files
 .DS_Store
 Thumbs.db
