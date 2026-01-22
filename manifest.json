@@ -3,7 +3,7 @@
   "name": "Collab Mentions",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "Serverless collaboration through @mentions for shared vaults on Google Drive, OneDrive, Dropbox, or any sync file service.",
+  "description": "Serverless collaboration through @mentions for shared vaults on Google Drive, OneDrive, or Dropbox",
   "author": "Bulwark Black LLC",
   "authorUrl": "https://bulwarkblack.com",
   "isDesktopOnly": true
