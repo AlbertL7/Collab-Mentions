@@ -37,6 +37,11 @@ This is the tradeoff for serverless simplicity. If you need instant, real-time c
 
 ## Why Collab Mentions?
 
+<img width="675" height="993" alt="2026-01-21 21_04_35-" src="https://github.com/user-attachments/assets/25a25b65-dd31-4a95-8c58-381c95b02527" />
+
+<img width="1555" height="1027" alt="2026-01-21 21_05_24-" src="https://github.com/user-attachments/assets/658f6ea9-7455-4df6-a8f1-12c447ea0ae3" />
+
+
 - **Serverless** — All data lives in your vault, syncs through your existing service
 - **Zero Configuration** — No servers, no accounts, no APIs
 - **Privacy First** — Your conversations never leave your vault
