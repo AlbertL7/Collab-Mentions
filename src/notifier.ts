@@ -1,4 +1,4 @@
-import { App, Notice, Modal, MarkdownView } from 'obsidian';
+import { App, Notice, Modal, MarkdownView, TFile } from 'obsidian';
 import { Mention } from './types';
 import { MentionParser } from './mentionParser';
 import { UserManager } from './userManager';
@@ -27,7 +27,7 @@ export class Notifier {
                 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Mi4eBdWxzgImLhXlta3WBi42HfHJud4SLjIV5bmt2goyMhXlsandCjIyFeWxqdYKMjIV5bGp1goyMhXlsanWCjIyFeWxqdYKMjIV5bA=='
             );
         } catch (e) {
-            console.log('Could not initialize notification sound');
+            console.debug('Could not initialize notification sound');
         }
     }
 
@@ -47,10 +47,10 @@ export class Notifier {
      * Show a simple notice
      */
     showNotice(message: string, duration: number = 5000): void {
-        console.log('[Collab-Mentions] Showing notice:', message);
+        console.debug('[Collab-Mentions] Showing notice:', message);
         try {
             new Notice(message, duration);
-            console.log('[Collab-Mentions] Notice created successfully');
+            console.debug('[Collab-Mentions] Notice created successfully');
         } catch (e) {
             console.error('[Collab-Mentions] Error creating notice:', e);
         }
@@ -200,9 +200,9 @@ class UnreadMentionsModal extends Modal {
 
                 // Open the file and go to line
                 const file = this.app.vault.getAbstractFileByPath(mention.file);
-                if (file) {
+                if (file instanceof TFile) {
                     const leaf = this.app.workspace.getLeaf();
-                    await leaf.openFile(file as any);
+                    await leaf.openFile(file);
 
                     // Try to scroll to line
                     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -219,7 +219,7 @@ class UnreadMentionsModal extends Modal {
             const actionsEl = itemEl.createEl('div', { cls: 'mention-actions' });
 
             const markReadBtn = actionsEl.createEl('button', {
-                text: '✓ Mark Read',
+                text: '✓ Mark read',
                 cls: 'mention-btn'
             });
             markReadBtn.addEventListener('click', async () => {
@@ -233,7 +233,7 @@ class UnreadMentionsModal extends Modal {
         const footerEl = contentEl.createEl('div', { cls: 'mention-footer' });
 
         const markAllBtn = footerEl.createEl('button', {
-            text: 'Mark All as Read',
+            text: 'Mark all as read',
             cls: 'mention-btn-primary'
         });
         markAllBtn.addEventListener('click', async () => {

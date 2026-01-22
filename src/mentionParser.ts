@@ -33,7 +33,7 @@ export class MentionParser {
      * Generate a simple unique ID
      */
     private generateId(): string {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
     }
 
     /**
@@ -133,7 +133,7 @@ export class MentionParser {
                     const savedHash = this.computeHash(savedContent);
 
                     if (savedHash === expectedHash) {
-                        console.log('[Collab-Mentions] Mentions saved and verified (attempt', attempt + ')');
+                        console.debug('[Collab-Mentions] Mentions saved and verified (attempt', attempt + ')');
                         return; // Success!
                     } else {
                         console.warn(`[Collab-Mentions] Save verification failed (attempt ${attempt}/${MAX_SAVE_RETRIES}), hash mismatch`);
@@ -166,10 +166,10 @@ export class MentionParser {
 
         while ((match = this.mentionRegex.exec(text)) !== null) {
             const mentionedName = match[1];
-            console.log('[Collab-Mentions] Found @mention:', mentionedName);
+            console.debug('[Collab-Mentions] Found @mention:', mentionedName);
             // Check if this is a registered user
             const user = this.userManager.getUserByName(mentionedName);
-            console.log('[Collab-Mentions] User lookup result:', user ? user.vaultName : 'NOT FOUND');
+            console.debug('[Collab-Mentions] User lookup result:', user ? user.vaultName : 'NOT FOUND');
             if (user) {
                 mentions.push(mentionedName);
             }
@@ -206,7 +206,7 @@ export class MentionParser {
 
         // Cannot mention yourself
         if (to.toLowerCase() === currentUser.vaultName.toLowerCase()) {
-            console.log('[Collab-Mentions] Skipping self-mention');
+            console.debug('[Collab-Mentions] Skipping self-mention');
             return null;
         }
 
@@ -220,7 +220,7 @@ export class MentionParser {
         );
 
         if (existingFromOther) {
-            console.log('[Collab-Mentions] Mention already exists from another user:', existingFromOther.from);
+            console.debug('[Collab-Mentions] Mention already exists from another user:', existingFromOther.from);
             return null;
         }
 
@@ -563,7 +563,7 @@ export class MentionParser {
 
         if (removed > 0) {
             await this.saveMentions();
-            console.log(`Auto-cleanup: removed ${removed} old mentions`);
+            console.debug(`Auto-cleanup: removed ${removed} old mentions`);
         }
 
         return removed;

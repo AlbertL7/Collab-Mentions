@@ -1,4 +1,51 @@
 import { App, Modal, Setting, Notice } from 'obsidian';
+
+/**
+ * Generic confirmation modal for actions
+ */
+class ConfirmModal extends Modal {
+    private title: string;
+    private message: string;
+    private onConfirm: () => void;
+
+    constructor(app: App, title: string, message: string, onConfirm: () => void) {
+        super(app);
+        this.title = title;
+        this.message = message;
+        this.onConfirm = onConfirm;
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('collab-confirm-modal');
+
+        new Setting(contentEl).setName(this.title).setHeading();
+        contentEl.createEl('p', { text: this.message });
+
+        const buttonRow = contentEl.createEl('div', { cls: 'collab-confirm-buttons' });
+
+        const cancelBtn = buttonRow.createEl('button', {
+            text: 'Cancel',
+            cls: 'collab-confirm-cancel-btn'
+        });
+        cancelBtn.addEventListener('click', () => this.close());
+
+        const confirmBtn = buttonRow.createEl('button', {
+            text: 'Confirm',
+            cls: 'collab-confirm-action-btn'
+        });
+        confirmBtn.addEventListener('click', () => {
+            this.close();
+            this.onConfirm();
+        });
+    }
+
+    onClose(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
 import { UserManager } from '../userManager';
 
 export class RegisterModal extends Modal {
@@ -14,7 +61,7 @@ export class RegisterModal extends Modal {
     onOpen(): void {
         const { contentEl } = this;
 
-        contentEl.createEl('h2', { text: '👤 Register for Collab Mentions' });
+        new Setting(contentEl).setName('👤 Register for Collab Mentions').setHeading();
 
         const localId = this.userManager.getLocalIdentifier();
         const os = this.userManager.getOS();
@@ -44,7 +91,7 @@ export class RegisterModal extends Modal {
         // Show existing users
         const existingUsers = this.userManager.getAllUsers();
         if (existingUsers.length > 0) {
-            contentEl.createEl('h4', { text: 'Existing team members:' });
+            new Setting(contentEl).setName('Existing team members').setHeading();
             const userList = contentEl.createEl('ul', { cls: 'collab-user-list' });
             for (const user of existingUsers) {
                 const li = userList.createEl('li');
@@ -118,7 +165,7 @@ export class UserManagementModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
 
-        contentEl.createEl('h2', { text: '👥 Team Members' });
+        new Setting(contentEl).setName('👥 Team members').setHeading();
 
         const currentUser = this.userManager.getCurrentUser();
         const allUsers = this.userManager.getAllUsers();
@@ -132,7 +179,7 @@ export class UserManagementModal extends Modal {
             }
         }
 
-        contentEl.createEl('h4', { text: 'Registered team members:' });
+        new Setting(contentEl).setName('Registered team members').setHeading();
 
         if (allUsers.length === 0) {
             contentEl.createEl('p', {
@@ -173,7 +220,7 @@ export class UserManagementModal extends Modal {
                 // Role cell - show registration # and admin level
                 const roleCell = row.createEl('td');
                 if (user.isAdmin) {
-                    const adminText = user.adminLevel === 'primary' ? 'Primary Admin' : 'Secondary Admin';
+                    const adminText = user.adminLevel === 'primary' ? 'Primary admin' : 'Secondary admin';
                     roleCell.createEl('span', {
                         text: adminText,
                         cls: user.adminLevel === 'primary' ? 'collab-admin-badge collab-primary-admin' : 'collab-admin-badge'
@@ -223,15 +270,17 @@ export class UserManagementModal extends Modal {
                             text: 'Remove',
                             cls: 'collab-action-btn collab-action-btn-danger'
                         });
-                        removeBtn.addEventListener('click', async () => {
-                            const confirmed = confirm(
-                                `Are you sure you want to remove "${user.vaultName}" from the team?`
-                            );
-                            if (confirmed) {
-                                await this.userManager.removeUser(user.vaultName);
-                                this.render();
-                                this.onUpdate();
-                            }
+                        removeBtn.addEventListener('click', () => {
+                            new ConfirmModal(
+                                this.app,
+                                'Remove team member?',
+                                `Are you sure you want to remove "${user.vaultName}" from the team?`,
+                                async () => {
+                                    await this.userManager.removeUser(user.vaultName);
+                                    this.render();
+                                    this.onUpdate();
+                                }
+                            ).open();
                         });
                     }
                 }
@@ -243,18 +292,19 @@ export class UserManagementModal extends Modal {
         if (currentUser) {
             new Setting(footerEl)
                 .addButton(btn => btn
-                    .setButtonText('Unregister Me')
+                    .setButtonText('Unregister me')
                     .setWarning()
-                    .onClick(async () => {
-                        const confirmed = confirm(
-                            `Are you sure you want to unregister "${currentUser.vaultName}" from this machine?`
-                        );
-
-                        if (confirmed) {
-                            await this.userManager.unregisterCurrentUser();
-                            this.onUpdate();
-                            this.close();
-                        }
+                    .onClick(() => {
+                        new ConfirmModal(
+                            this.app,
+                            'Unregister from machine?',
+                            `Are you sure you want to unregister "${currentUser.vaultName}" from this machine?`,
+                            async () => {
+                                await this.userManager.unregisterCurrentUser();
+                                this.onUpdate();
+                                this.close();
+                            }
+                        ).open();
                     })
                 )
                 .addButton(btn => btn

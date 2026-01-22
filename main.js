@@ -106,13 +106,13 @@ var UserManager = class {
           const lockData2 = JSON.parse(content);
           const lockAge = now - lockData2.timestamp;
           if (lockAge > LOCK_TIMEOUT) {
-            console.log("[Collab-Mentions] Stale lock found, taking over");
+            console.debug("[Collab-Mentions] Stale lock found, taking over");
           } else if (lockData2.holder !== localId) {
-            console.log("[Collab-Mentions] Lock held by:", lockData2.holder);
+            console.debug("[Collab-Mentions] Lock held by:", lockData2.holder);
             return false;
           }
         } catch (e) {
-          console.log("[Collab-Mentions] Invalid lock file, taking over");
+          console.debug("[Collab-Mentions] Invalid lock file, taking over");
         }
       }
       const lockData = {
@@ -124,10 +124,10 @@ var UserManager = class {
       const verifyContent = await this.app.vault.adapter.read(lockPath);
       const verifyData = JSON.parse(verifyContent);
       if (verifyData.holder === localId) {
-        console.log("[Collab-Mentions] Lock acquired");
+        console.debug("[Collab-Mentions] Lock acquired");
         return true;
       } else {
-        console.log("[Collab-Mentions] Lost lock race to:", verifyData.holder);
+        console.debug("[Collab-Mentions] Lost lock race to:", verifyData.holder);
         return false;
       }
     } catch (error) {
@@ -148,7 +148,7 @@ var UserManager = class {
           const lockData = JSON.parse(content);
           if (lockData.holder === localId) {
             await this.app.vault.adapter.remove(lockPath);
-            console.log("[Collab-Mentions] Lock released");
+            console.debug("[Collab-Mentions] Lock released");
           }
         } catch (e) {
           await this.app.vault.adapter.remove(lockPath);
@@ -435,10 +435,10 @@ var UserManager = class {
       if (await this.app.vault.adapter.exists(configPath)) {
         const content = await this.app.vault.adapter.read(configPath);
         this.usersConfig = JSON.parse(content);
-        console.log("[Collab-Mentions] Loaded users:", this.usersConfig.users.map((u) => u.vaultName));
+        console.debug("[Collab-Mentions] Loaded users:", this.usersConfig.users.map((u) => u.vaultName));
         await this.ensureAdminExists();
       } else {
-        console.log("[Collab-Mentions] No users file found, creating empty config");
+        console.debug("[Collab-Mentions] No users file found, creating empty config");
         this.usersConfig = { users: [] };
         await this.saveUsers();
       }
@@ -464,18 +464,18 @@ var UserManager = class {
         if (userInConfig && !userInConfig.registrationNumber) {
           userInConfig.registrationNumber = index + 1;
           needsSave = true;
-          console.log(`[Collab-Mentions] Migration: Assigned registration #${index + 1} to ${userInConfig.vaultName}`);
+          console.debug(`[Collab-Mentions] Migration: Assigned registration #${index + 1} to ${userInConfig.vaultName}`);
         }
       });
     }
     const primaryAdmins = this.usersConfig.users.filter((u) => u.adminLevel === "primary");
-    console.log("[Collab-Mentions] Current primary admins:", primaryAdmins.map((u) => u.vaultName));
+    console.debug("[Collab-Mentions] Current primary admins:", primaryAdmins.map((u) => u.vaultName));
     if (primaryAdmins.length !== 1) {
       for (const user of this.usersConfig.users) {
         if (user.adminLevel === "primary" && user.registrationNumber !== 1) {
           user.adminLevel = "secondary";
           needsSave = true;
-          console.log(`[Collab-Mentions] Migration: Demoted ${user.vaultName} from primary to secondary admin`);
+          console.debug(`[Collab-Mentions] Migration: Demoted ${user.vaultName} from primary to secondary admin`);
         }
       }
     }
@@ -485,17 +485,17 @@ var UserManager = class {
         firstUser.isAdmin = true;
         firstUser.adminLevel = "primary";
         needsSave = true;
-        console.log(`[Collab-Mentions] Migration: Set ${firstUser.vaultName} as primary admin (registration #1)`);
+        console.debug(`[Collab-Mentions] Migration: Set ${firstUser.vaultName} as primary admin (registration #1)`);
       }
     }
     for (const user of this.usersConfig.users) {
       if (user.isAdmin && !user.adminLevel && user.registrationNumber !== 1) {
         user.adminLevel = "secondary";
         needsSave = true;
-        console.log(`[Collab-Mentions] Migration: Set ${user.vaultName} as secondary admin`);
+        console.debug(`[Collab-Mentions] Migration: Set ${user.vaultName} as secondary admin`);
       }
     }
-    console.log("[Collab-Mentions] Users after migration:", this.usersConfig.users.map((u) => ({
+    console.debug("[Collab-Mentions] Users after migration:", this.usersConfig.users.map((u) => ({
       name: u.vaultName,
       regNum: u.registrationNumber,
       isAdmin: u.isAdmin,
@@ -518,10 +518,10 @@ var UserManager = class {
           for (const diskUser of diskConfig.users) {
             if (!ourLocalIds.has(diskUser.localIdentifier)) {
               if (this.isRecentlyDeletedUser(diskUser.localIdentifier)) {
-                console.log("[Collab-Mentions] Skipping recently deleted user:", diskUser.vaultName);
+                console.debug("[Collab-Mentions] Skipping recently deleted user:", diskUser.vaultName);
                 continue;
               }
-              console.log("[Collab-Mentions] Merging user from disk:", diskUser.vaultName);
+              console.debug("[Collab-Mentions] Merging user from disk:", diskUser.vaultName);
               this.usersConfig.users.push(diskUser);
             }
           }
@@ -539,10 +539,10 @@ var UserManager = class {
               hasPrimary = true;
             } else if (user.adminLevel === "primary") {
               user.adminLevel = "secondary";
-              console.log("[Collab-Mentions] Demoted duplicate primary admin:", user.vaultName);
+              console.debug("[Collab-Mentions] Demoted duplicate primary admin:", user.vaultName);
             }
           }
-          console.log("[Collab-Mentions] After merge - users:", this.usersConfig.users.map((u) => ({
+          console.debug("[Collab-Mentions] After merge - users:", this.usersConfig.users.map((u) => ({
             name: u.vaultName,
             regNum: u.registrationNumber,
             adminLevel: u.adminLevel
@@ -559,7 +559,7 @@ var UserManager = class {
           const savedContent = await this.app.vault.adapter.read(USERS_FILE);
           const savedHash = this.computeHash(savedContent);
           if (savedHash === expectedHash) {
-            console.log("[Collab-Mentions] Users saved and verified (attempt", attempt + ")");
+            console.debug("[Collab-Mentions] Users saved and verified (attempt", attempt + ")");
             return;
           } else {
             console.warn(`[Collab-Mentions] Users save verification failed (attempt ${attempt}/${MAX_SAVE_RETRIES}), hash mismatch`);
@@ -595,12 +595,12 @@ var UserManager = class {
     const localId = this.getLocalIdentifier();
     const currentOS = this.getOS();
     for (let attempt = 1; attempt <= MAX_REGISTRATION_RETRIES; attempt++) {
-      console.log(`[Collab-Mentions] Registration attempt ${attempt}/${MAX_REGISTRATION_RETRIES}`);
+      console.debug(`[Collab-Mentions] Registration attempt ${attempt}/${MAX_REGISTRATION_RETRIES}`);
       const lockAcquired = await this.acquireLock();
       if (!lockAcquired) {
         if (attempt < MAX_REGISTRATION_RETRIES) {
           const waitTime = 500 * attempt;
-          console.log(`[Collab-Mentions] Could not acquire lock, waiting ${waitTime}ms...`);
+          console.debug(`[Collab-Mentions] Could not acquire lock, waiting ${waitTime}ms...`);
           await new Promise((resolve) => setTimeout(resolve, waitTime));
           continue;
         } else {
@@ -610,7 +610,7 @@ var UserManager = class {
       }
       try {
         await this.loadUsers();
-        console.log("[Collab-Mentions] Registration: Reloaded users, count:", this.usersConfig.users.length);
+        console.debug("[Collab-Mentions] Registration: Reloaded users, count:", this.usersConfig.users.length);
         const existingByLocal = this.usersConfig.users.find(
           (user) => user.localIdentifier === localId
         );
@@ -653,7 +653,7 @@ var UserManager = class {
           new import_obsidian.Notice(`Successfully registered as "${vaultName}"`);
           return true;
         } else {
-          console.log("[Collab-Mentions] Registration not verified, retrying...");
+          console.debug("[Collab-Mentions] Registration not verified, retrying...");
           if (attempt >= MAX_REGISTRATION_RETRIES) {
             new import_obsidian.Notice("Registration failed, please try again");
             return false;
@@ -686,7 +686,7 @@ var UserManager = class {
       const name = this.currentUser.vaultName;
       const wasPrimaryAdmin = this.currentUser.adminLevel === "primary";
       this.recentlyDeletedUsers.set(this.currentUser.localIdentifier, Date.now());
-      console.log("[Collab-Mentions] Tracking unregistered user:", name);
+      console.debug("[Collab-Mentions] Tracking unregistered user:", name);
       this.usersConfig.users.splice(index, 1);
       if (wasPrimaryAdmin && this.usersConfig.users.length > 0) {
         const sortedUsers = [...this.usersConfig.users].sort(
@@ -699,7 +699,7 @@ var UserManager = class {
         if (userInConfig) {
           userInConfig.isAdmin = true;
           userInConfig.adminLevel = "primary";
-          console.log(`Primary admin left. Promoted ${userInConfig.vaultName} to primary admin.`);
+          console.debug(`Primary admin left. Promoted ${userInConfig.vaultName} to primary admin.`);
           new import_obsidian.Notice(`${userInConfig.vaultName} has been promoted to primary admin`);
         }
       }
@@ -854,7 +854,7 @@ var UserManager = class {
     }
     const userToRemove = this.usersConfig.users[index];
     this.recentlyDeletedUsers.set(userToRemove.localIdentifier, Date.now());
-    console.log("[Collab-Mentions] Tracking deleted user:", userToRemove.vaultName, userToRemove.localIdentifier);
+    console.debug("[Collab-Mentions] Tracking deleted user:", userToRemove.vaultName, userToRemove.localIdentifier);
     this.usersConfig.users.splice(index, 1);
     await this.saveUsers();
     new import_obsidian.Notice(`Removed user "${vaultName}"`);
@@ -888,7 +888,7 @@ var MentionParser = class {
    * Generate a simple unique ID
    */
   generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+    return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
   }
   /**
    * Generate a content-based hash for a mention (for deduplication)
@@ -969,7 +969,7 @@ var MentionParser = class {
           const savedContent = await this.app.vault.adapter.read(MENTIONS_FILE);
           const savedHash = this.computeHash(savedContent);
           if (savedHash === expectedHash) {
-            console.log("[Collab-Mentions] Mentions saved and verified (attempt", attempt + ")");
+            console.debug("[Collab-Mentions] Mentions saved and verified (attempt", attempt + ")");
             return;
           } else {
             console.warn(`[Collab-Mentions] Save verification failed (attempt ${attempt}/${MAX_SAVE_RETRIES2}), hash mismatch`);
@@ -995,9 +995,9 @@ var MentionParser = class {
     this.mentionRegex.lastIndex = 0;
     while ((match = this.mentionRegex.exec(text)) !== null) {
       const mentionedName = match[1];
-      console.log("[Collab-Mentions] Found @mention:", mentionedName);
+      console.debug("[Collab-Mentions] Found @mention:", mentionedName);
       const user = this.userManager.getUserByName(mentionedName);
-      console.log("[Collab-Mentions] User lookup result:", user ? user.vaultName : "NOT FOUND");
+      console.debug("[Collab-Mentions] User lookup result:", user ? user.vaultName : "NOT FOUND");
       if (user) {
         mentions.push(mentionedName);
       }
@@ -1024,14 +1024,14 @@ var MentionParser = class {
       return null;
     }
     if (to.toLowerCase() === currentUser.vaultName.toLowerCase()) {
-      console.log("[Collab-Mentions] Skipping self-mention");
+      console.debug("[Collab-Mentions] Skipping self-mention");
       return null;
     }
     const existingFromOther = this.mentionsData.mentions.find(
       (m) => m.to.toLowerCase() === to.toLowerCase() && m.file === file.path && m.line === line && m.from.toLowerCase() !== currentUser.vaultName.toLowerCase()
     );
     if (existingFromOther) {
-      console.log("[Collab-Mentions] Mention already exists from another user:", existingFromOther.from);
+      console.debug("[Collab-Mentions] Mention already exists from another user:", existingFromOther.from);
       return null;
     }
     const existingByLine = this.mentionsData.mentions.find(
@@ -1288,7 +1288,7 @@ var MentionParser = class {
     const removed = initialCount - kept.length;
     if (removed > 0) {
       await this.saveMentions();
-      console.log(`Auto-cleanup: removed ${removed} old mentions`);
+      console.debug(`Auto-cleanup: removed ${removed} old mentions`);
     }
     return removed;
   }
@@ -1436,7 +1436,7 @@ var _ChatManager = class {
         for (const user of reaction.users) {
           const recentToggle = this.getRecentReactionToggle(ourMsg.id, reaction.emoji, user);
           if (recentToggle && !recentToggle.added) {
-            console.log(`[Collab-Mentions] Merge: Skipping re-add of ${reaction.emoji} by ${user} (recently removed)`);
+            console.debug(`[Collab-Mentions] Merge: Skipping re-add of ${reaction.emoji} by ${user} (recently removed)`);
             continue;
           }
           emojiMap.get(reaction.emoji).add(user);
@@ -1520,7 +1520,7 @@ var _ChatManager = class {
       }
       const exists = this.chatData.channelMessages[entry.channelId].some((m) => m.id === msgId);
       if (!exists) {
-        console.log(`Re-adding protected message ${msgId} that was lost during sync`);
+        console.debug(`Re-adding protected message ${msgId} that was lost during sync`);
         this.chatData.channelMessages[entry.channelId].push(entry.message);
         this.chatData.channelMessages[entry.channelId].sort(
           (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
@@ -1572,7 +1572,7 @@ var _ChatManager = class {
    * Generate a simple unique ID
    */
   generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+    return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
   }
   /**
    * Load chat data from vault with merge strategy to preserve in-memory changes
@@ -1606,7 +1606,7 @@ var _ChatManager = class {
         if (!rawData) {
           console.error("[Collab-Mentions] Failed to load chat after", MAX_LOAD_RETRIES, "attempts:", lastError);
           if (this.chatData && this.chatData.channels.length > 0) {
-            console.log("[Collab-Mentions] Keeping existing in-memory data");
+            console.debug("[Collab-Mentions] Keeping existing in-memory data");
             return;
           }
           this.chatData = this.createEmptyV2Data();
@@ -1616,7 +1616,7 @@ var _ChatManager = class {
         if (this.isV2Data(rawData)) {
           diskData = rawData;
         } else {
-          console.log("Migrating chat data from V1 to V2...");
+          console.debug("Migrating chat data from V1 to V2...");
           diskData = this.migrateV1ToV2(rawData);
         }
         if (!this.chatData || this.chatData.channels.length === 0) {
@@ -1635,7 +1635,7 @@ var _ChatManager = class {
         const ourDeletedIds = new Set(this.chatData.deletedChannels.map((d) => d.id));
         for (const diskDeleted of diskData.deletedChannels) {
           if (!ourDeletedIds.has(diskDeleted.id)) {
-            console.log("[Collab-Mentions] Syncing deleted channel from disk:", diskDeleted.id);
+            console.debug("[Collab-Mentions] Syncing deleted channel from disk:", diskDeleted.id);
             this.chatData.deletedChannels.push(diskDeleted);
             this.recentlyDeletedChannels.set(diskDeleted.id, new Date(diskDeleted.deletedAt).getTime());
           }
@@ -1655,7 +1655,7 @@ var _ChatManager = class {
           return notOnDisk && explicitlyDeleted;
         });
         for (const ch of channelsToRemove) {
-          console.log("[Collab-Mentions] Removing explicitly deleted channel:", ch.id, ch.name);
+          console.debug("[Collab-Mentions] Removing explicitly deleted channel:", ch.id, ch.name);
           this.chatData.channels = this.chatData.channels.filter((c) => c.id !== ch.id);
           delete this.chatData.channelMessages[ch.id];
           delete this.chatData.readState[ch.id];
@@ -1664,7 +1664,7 @@ var _ChatManager = class {
           (ch) => ch.id !== GENERAL_CHANNEL_ID && !diskChannelIds.has(ch.id) && !deletedChannelIds.has(ch.id)
         );
         if (localOnlyChannels.length > 0) {
-          console.log(
+          console.debug(
             "[Collab-Mentions] Preserving local-only channels (will sync back):",
             localOnlyChannels.map((c) => ({ id: c.id, name: c.name }))
           );
@@ -1672,7 +1672,7 @@ var _ChatManager = class {
         const ourChannelMap = new Map(this.chatData.channels.map((ch) => [ch.id, ch]));
         for (const diskChannel of diskData.channels) {
           if (this.isRecentlyDeletedChannel(diskChannel.id)) {
-            console.log("[Collab-Mentions] Skipping recently deleted channel:", diskChannel.id);
+            console.debug("[Collab-Mentions] Skipping recently deleted channel:", diskChannel.id);
             continue;
           }
           const ourChannel = ourChannelMap.get(diskChannel.id);
@@ -1680,20 +1680,20 @@ var _ChatManager = class {
             const currentUser = this.userManager.getCurrentUser();
             if (currentUser && this.hasRecentlyLeftChannel(diskChannel.id)) {
               diskChannel.members = diskChannel.members.filter((m) => m !== currentUser.vaultName);
-              console.log("[Collab-Mentions] Adding new channel from disk (filtered after recent leave):", diskChannel.id, diskChannel.name);
+              console.debug("[Collab-Mentions] Adding new channel from disk (filtered after recent leave):", diskChannel.id, diskChannel.name);
             } else {
-              console.log("[Collab-Mentions] Adding new channel from disk:", diskChannel.id, diskChannel.name);
+              console.debug("[Collab-Mentions] Adding new channel from disk:", diskChannel.id, diskChannel.name);
             }
             const recentlyAdded = this.getRecentlyAddedMembers(diskChannel.id);
             for (const member of recentlyAdded) {
               if (!diskChannel.members.includes(member)) {
                 diskChannel.members.push(member);
-                console.log("[Collab-Mentions] Preserved recently added member in new channel:", member);
+                console.debug("[Collab-Mentions] Preserved recently added member in new channel:", member);
               }
             }
             this.chatData.channels.push(diskChannel);
           } else {
-            console.log(
+            console.debug(
               "[Collab-Mentions] Merging channel:",
               ourChannel.id,
               "our members:",
@@ -1707,14 +1707,14 @@ var _ChatManager = class {
               const wasInDiskMembers = mergedMembers.includes(currentUser.vaultName);
               mergedMembers = mergedMembers.filter((m) => m !== currentUser.vaultName);
               if (wasInDiskMembers) {
-                console.log("[Collab-Mentions] Prevented re-adding user after recent leave:", currentUser.vaultName);
+                console.debug("[Collab-Mentions] Prevented re-adding user after recent leave:", currentUser.vaultName);
               }
             }
             const recentlyAdded = this.getRecentlyAddedMembers(diskChannel.id);
             for (const member of recentlyAdded) {
               if (!mergedMembers.includes(member)) {
                 mergedMembers.push(member);
-                console.log("[Collab-Mentions] Preserved recently added member:", member);
+                console.debug("[Collab-Mentions] Preserved recently added member:", member);
               }
             }
             ourChannel.members = mergedMembers;
@@ -1883,7 +1883,7 @@ var _ChatManager = class {
           const savedContent = await this.app.vault.adapter.read(CHAT_FILE);
           const savedHash = this.computeHash(savedContent);
           if (savedHash === expectedHash) {
-            console.log("[Collab-Mentions] Chat saved and verified (attempt", attempt + ")");
+            console.debug("[Collab-Mentions] Chat saved and verified (attempt", attempt + ")");
             return;
           } else {
             console.warn(`[Collab-Mentions] Chat save verification failed (attempt ${attempt}/${MAX_SAVE_RETRIES3}), hash mismatch`);
@@ -1999,7 +1999,7 @@ var _ChatManager = class {
     const currentUser = this.userManager.getCurrentUser();
     if (currentUser && newMember === currentUser.vaultName) {
       this.recentlyLeftChannels.delete(channelId);
-      console.log("[Collab-Mentions] Cleared leave protection - user explicitly rejoined");
+      console.debug("[Collab-Mentions] Cleared leave protection - user explicitly rejoined");
     }
     if (channel.type === "dm") {
       channel.type = "group";
@@ -2033,27 +2033,27 @@ var _ChatManager = class {
   async leaveChannel(channelId, username) {
     const channel = this.chatData.channels.find((ch) => ch.id === channelId);
     if (!channel) {
-      console.log("[Collab-Mentions] leaveChannel: channel not found", channelId);
+      console.debug("[Collab-Mentions] leaveChannel: channel not found", channelId);
       return false;
     }
     if (channel.type === "general")
       return false;
     const wasLastMember = this.isLastMember(channelId, username);
-    console.log("[Collab-Mentions] leaveChannel:", channelId, "user:", username, "members before:", channel.members, "isLastMember:", wasLastMember);
+    console.debug("[Collab-Mentions] leaveChannel:", channelId, "user:", username, "members before:", channel.members, "isLastMember:", wasLastMember);
     channel.members = channel.members.filter((m) => m !== username);
     this.recentlyLeftChannels.set(channelId, Date.now());
     const channelAddedMembers = this.recentlyAddedMembers.get(channelId);
     if (channelAddedMembers) {
       channelAddedMembers.delete(username);
-      console.log("[Collab-Mentions] leaveChannel: cleared add protection for", username);
+      console.debug("[Collab-Mentions] leaveChannel: cleared add protection for", username);
     }
-    console.log("[Collab-Mentions] leaveChannel: tracking leave for merge protection");
-    console.log("[Collab-Mentions] leaveChannel: members after:", channel.members);
+    console.debug("[Collab-Mentions] leaveChannel: tracking leave for merge protection");
+    console.debug("[Collab-Mentions] leaveChannel: members after:", channel.members);
     if (this.activeChannelId === channelId) {
       this.activeChannelId = GENERAL_CHANNEL_ID;
     }
     if (channel.members.length === 0) {
-      console.log("[Collab-Mentions] leaveChannel: channel now empty, deleting");
+      console.debug("[Collab-Mentions] leaveChannel: channel now empty, deleting");
       await this.deleteChannel(channelId);
       return "deleted";
     }
@@ -2075,7 +2075,7 @@ var _ChatManager = class {
       return false;
     const currentUser = this.userManager.getCurrentUser();
     const deletedBy = (currentUser == null ? void 0 : currentUser.vaultName) || "unknown";
-    console.log("[Collab-Mentions] deleteChannel:", channelId, "by:", deletedBy, "channels before:", this.chatData.channels.length);
+    console.debug("[Collab-Mentions] deleteChannel:", channelId, "by:", deletedBy, "channels before:", this.chatData.channels.length);
     const now = Date.now();
     this.recentlyDeletedChannels.set(channelId, now);
     if (!this.chatData.deletedChannels) {
@@ -2087,17 +2087,17 @@ var _ChatManager = class {
         deletedAt: new Date().toISOString(),
         deletedBy
       });
-      console.log("[Collab-Mentions] Added to deletedChannels for sync");
+      console.debug("[Collab-Mentions] Added to deletedChannels for sync");
     }
     this.chatData.channels = this.chatData.channels.filter((ch) => ch.id !== channelId);
-    console.log("[Collab-Mentions] deleteChannel: channels after:", this.chatData.channels.length);
+    console.debug("[Collab-Mentions] deleteChannel: channels after:", this.chatData.channels.length);
     delete this.chatData.channelMessages[channelId];
     delete this.chatData.readState[channelId];
     if (this.activeChannelId === channelId) {
       this.activeChannelId = GENERAL_CHANNEL_ID;
     }
     await this.saveChat();
-    console.log("[Collab-Mentions] deleteChannel: saved");
+    console.debug("[Collab-Mentions] deleteChannel: saved");
     return true;
   }
   /**
@@ -2149,7 +2149,7 @@ var _ChatManager = class {
                     exported: exportedPath,
                     filename: exportedFilename
                   });
-                  console.log("[Collab-Mentions] Exported image:", img.path, "->", exportedPath);
+                  console.debug("[Collab-Mentions] Exported image:", img.path, "->", exportedPath);
                 } catch (imgError) {
                   console.warn("[Collab-Mentions] Failed to copy image:", img.path, imgError);
                 }
@@ -2235,7 +2235,7 @@ Reactions: ${reactions}
         }
       }
       await this.app.vault.adapter.write(filePath, content);
-      console.log("[Collab-Mentions] Exported channel to:", filePath);
+      console.debug("[Collab-Mentions] Exported channel to:", filePath);
       return filePath;
     } catch (error) {
       console.error("[Collab-Mentions] Failed to export channel:", error);
@@ -2250,7 +2250,7 @@ Reactions: ${reactions}
       this.recentlyAddedMembers.set(channelId, /* @__PURE__ */ new Map());
     }
     this.recentlyAddedMembers.get(channelId).set(username, Date.now());
-    console.log("[Collab-Mentions] Tracking member added for merge protection:", username, "to", channelId);
+    console.debug("[Collab-Mentions] Tracking member added for merge protection:", username, "to", channelId);
   }
   /**
    * Get recently added members for a channel that should be preserved during merge
@@ -2629,7 +2629,7 @@ Reactions: ${reactions}
       added,
       timestamp: Date.now()
     });
-    console.log(`[Collab-Mentions] Tracked reaction toggle: ${emoji} by ${username} on ${messageId} (${added ? "added" : "removed"})`);
+    console.debug(`[Collab-Mentions] Tracked reaction toggle: ${emoji} by ${username} on ${messageId} (${added ? "added" : "removed"})`);
   }
   /**
    * Get recent reaction toggle for a specific emoji+user on a message
@@ -2988,7 +2988,7 @@ var ReminderManager = class {
    * Generate a simple unique ID
    */
   generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+    return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
   }
   /**
    * Load reminders from vault
@@ -3136,14 +3136,14 @@ var ReminderManager = class {
     const now = new Date();
     const currentUser = this.userManager.getCurrentUser();
     if (!currentUser) {
-      console.log("[Collab-Mentions] checkDueReminders: no current user");
+      console.debug("[Collab-Mentions] checkDueReminders: no current user");
       return [];
     }
     const dueReminders = [];
     let needsSave = false;
     const activeReminders = this.remindersData.reminders.filter((r) => !r.completed);
     if (activeReminders.length > 0) {
-      console.log("[Collab-Mentions] checkDueReminders: checking", activeReminders.length, "active reminders at", now.toISOString());
+      console.debug("[Collab-Mentions] checkDueReminders: checking", activeReminders.length, "active reminders at", now.toISOString());
     }
     for (const reminder of this.remindersData.reminders) {
       if (reminder.completed)
@@ -3153,7 +3153,7 @@ var ReminderManager = class {
       const isOwner = reminder.user === currentUser.vaultName;
       const alreadyNotified = reminder.notified;
       if (isDue) {
-        console.log("[Collab-Mentions] Reminder due check:", {
+        console.debug("[Collab-Mentions] Reminder due check:", {
           id: reminder.id,
           message: reminder.message.substring(0, 30),
           dueDate: dueDate.toISOString(),
@@ -3175,20 +3175,20 @@ var ReminderManager = class {
             reminder.notifiedUsers = [];
           reminder.notifiedUsers.push(currentUser.vaultName);
           needsSave = true;
-          console.log("[Collab-Mentions] Global reminder needs notification for user:", currentUser.vaultName);
+          console.debug("[Collab-Mentions] Global reminder needs notification for user:", currentUser.vaultName);
         }
       } else {
         if (reminder.user === currentUser.vaultName && !reminder.notified) {
           shouldNotify = true;
           reminder.notified = true;
           needsSave = true;
-          console.log("[Collab-Mentions] Personal reminder needs notification");
+          console.debug("[Collab-Mentions] Personal reminder needs notification");
         }
       }
       if (shouldNotify) {
         dueReminders.push(reminder);
         if (this.onReminderDue) {
-          console.log("[Collab-Mentions] Triggering onReminderDue callback for:", reminder.message.substring(0, 30));
+          console.debug("[Collab-Mentions] Triggering onReminderDue callback for:", reminder.message.substring(0, 30));
           this.onReminderDue(reminder);
         } else {
           console.error("[Collab-Mentions] WARNING: onReminderDue callback not set!");
@@ -3198,7 +3198,7 @@ var ReminderManager = class {
     if (needsSave) {
       this.remindersData.lastChecked = now.toISOString();
       await this.saveReminders();
-      console.log("[Collab-Mentions] Saved reminders after marking as notified");
+      console.debug("[Collab-Mentions] Saved reminders after marking as notified");
     }
     return dueReminders;
   }
@@ -3209,14 +3209,14 @@ var ReminderManager = class {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
     }
-    console.log("[Collab-Mentions] Starting periodic reminder check every", intervalMs, "ms");
-    console.log("[Collab-Mentions] Running immediate check on startPeriodicCheck");
+    console.debug("[Collab-Mentions] Starting periodic reminder check every", intervalMs, "ms");
+    console.debug("[Collab-Mentions] Running immediate check on startPeriodicCheck");
     this.checkDueReminders();
     this.checkInterval = window.setInterval(async () => {
       const now = new Date();
       const activeReminders = this.remindersData.reminders.filter((r) => !r.completed && !r.notified);
       if (activeReminders.length > 0) {
-        console.log(
+        console.debug(
           "[Collab-Mentions] Periodic check running at",
           now.toISOString(),
           "with",
@@ -3227,7 +3227,7 @@ var ReminderManager = class {
       await this.loadReminders();
       const dueReminders = await this.checkDueReminders();
       if (dueReminders.length > 0) {
-        console.log("[Collab-Mentions] Periodic check found due reminders:", dueReminders.length);
+        console.debug("[Collab-Mentions] Periodic check found due reminders:", dueReminders.length);
       }
     }, intervalMs);
   }
@@ -3473,7 +3473,7 @@ var Notifier = class {
         "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Mi4eBdWxzgImLhXlta3WBi42HfHJud4SLjIV5bmt2goyMhXlsandCjIyFeWxqdYKMjIV5bGp1goyMhXlsanWCjIyFeWxqdYKMjIV5bA=="
       );
     } catch (e) {
-      console.log("Could not initialize notification sound");
+      console.debug("Could not initialize notification sound");
     }
   }
   /**
@@ -3490,10 +3490,10 @@ var Notifier = class {
    * Show a simple notice
    */
   showNotice(message, duration = 5e3) {
-    console.log("[Collab-Mentions] Showing notice:", message);
+    console.debug("[Collab-Mentions] Showing notice:", message);
     try {
       new import_obsidian2.Notice(message, duration);
-      console.log("[Collab-Mentions] Notice created successfully");
+      console.debug("[Collab-Mentions] Notice created successfully");
     } catch (e) {
       console.error("[Collab-Mentions] Error creating notice:", e);
     }
@@ -3618,7 +3618,7 @@ var UnreadMentionsModal = class extends import_obsidian2.Modal {
         e.preventDefault();
         this.close();
         const file = this.app.vault.getAbstractFileByPath(mention.file);
-        if (file) {
+        if (file instanceof import_obsidian2.TFile) {
           const leaf = this.app.workspace.getLeaf();
           await leaf.openFile(file);
           const view = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
@@ -3633,7 +3633,7 @@ var UnreadMentionsModal = class extends import_obsidian2.Modal {
       });
       const actionsEl = itemEl.createEl("div", { cls: "mention-actions" });
       const markReadBtn = actionsEl.createEl("button", {
-        text: "\u2713 Mark Read",
+        text: "\u2713 Mark read",
         cls: "mention-btn"
       });
       markReadBtn.addEventListener("click", async () => {
@@ -3645,7 +3645,7 @@ var UnreadMentionsModal = class extends import_obsidian2.Modal {
     }
     const footerEl = contentEl.createEl("div", { cls: "mention-footer" });
     const markAllBtn = footerEl.createEl("button", {
-      text: "Mark All as Read",
+      text: "Mark all as read",
       cls: "mention-btn-primary"
     });
     markAllBtn.addEventListener("click", async () => {
@@ -3686,6 +3686,39 @@ var UnreadMentionsModal = class extends import_obsidian2.Modal {
 
 // src/ui/registerModal.ts
 var import_obsidian3 = require("obsidian");
+var ConfirmModal = class extends import_obsidian3.Modal {
+  constructor(app, title, message, onConfirm) {
+    super(app);
+    this.title = title;
+    this.message = message;
+    this.onConfirm = onConfirm;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("collab-confirm-modal");
+    new import_obsidian3.Setting(contentEl).setName(this.title).setHeading();
+    contentEl.createEl("p", { text: this.message });
+    const buttonRow = contentEl.createEl("div", { cls: "collab-confirm-buttons" });
+    const cancelBtn = buttonRow.createEl("button", {
+      text: "Cancel",
+      cls: "collab-confirm-cancel-btn"
+    });
+    cancelBtn.addEventListener("click", () => this.close());
+    const confirmBtn = buttonRow.createEl("button", {
+      text: "Confirm",
+      cls: "collab-confirm-action-btn"
+    });
+    confirmBtn.addEventListener("click", () => {
+      this.close();
+      this.onConfirm();
+    });
+  }
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+};
 var RegisterModal = class extends import_obsidian3.Modal {
   constructor(app, userManager, onRegister) {
     super(app);
@@ -3694,7 +3727,7 @@ var RegisterModal = class extends import_obsidian3.Modal {
   }
   onOpen() {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "\u{1F464} Register for Collab Mentions" });
+    new import_obsidian3.Setting(contentEl).setName("\u{1F464} Register for Collab Mentions").setHeading();
     const localId = this.userManager.getLocalIdentifier();
     const os2 = this.userManager.getOS();
     contentEl.createEl("p", {
@@ -3713,7 +3746,7 @@ var RegisterModal = class extends import_obsidian3.Modal {
     );
     const existingUsers = this.userManager.getAllUsers();
     if (existingUsers.length > 0) {
-      contentEl.createEl("h4", { text: "Existing team members:" });
+      new import_obsidian3.Setting(contentEl).setName("Existing team members").setHeading();
       const userList = contentEl.createEl("ul", { cls: "collab-user-list" });
       for (const user of existingUsers) {
         const li = userList.createEl("li");
@@ -3770,7 +3803,7 @@ var UserManagementModal = class extends import_obsidian3.Modal {
   render() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "\u{1F465} Team Members" });
+    new import_obsidian3.Setting(contentEl).setName("\u{1F465} Team members").setHeading();
     const currentUser = this.userManager.getCurrentUser();
     const allUsers = this.userManager.getAllUsers();
     const isAdmin = this.userManager.isCurrentUserAdmin();
@@ -3781,7 +3814,7 @@ var UserManagementModal = class extends import_obsidian3.Modal {
         userInfo2.createEl("span", { text: " (Admin)", cls: "collab-admin-badge" });
       }
     }
-    contentEl.createEl("h4", { text: "Registered team members:" });
+    new import_obsidian3.Setting(contentEl).setName("Registered team members").setHeading();
     if (allUsers.length === 0) {
       contentEl.createEl("p", {
         text: "No users registered yet.",
@@ -3814,7 +3847,7 @@ var UserManagementModal = class extends import_obsidian3.Modal {
         }
         const roleCell = row.createEl("td");
         if (user.isAdmin) {
-          const adminText = user.adminLevel === "primary" ? "Primary Admin" : "Secondary Admin";
+          const adminText = user.adminLevel === "primary" ? "Primary admin" : "Secondary admin";
           roleCell.createEl("span", {
             text: adminText,
             cls: user.adminLevel === "primary" ? "collab-admin-badge collab-primary-admin" : "collab-admin-badge"
@@ -3856,15 +3889,17 @@ var UserManagementModal = class extends import_obsidian3.Modal {
               text: "Remove",
               cls: "collab-action-btn collab-action-btn-danger"
             });
-            removeBtn.addEventListener("click", async () => {
-              const confirmed = confirm(
-                `Are you sure you want to remove "${user.vaultName}" from the team?`
-              );
-              if (confirmed) {
-                await this.userManager.removeUser(user.vaultName);
-                this.render();
-                this.onUpdate();
-              }
+            removeBtn.addEventListener("click", () => {
+              new ConfirmModal(
+                this.app,
+                "Remove team member?",
+                `Are you sure you want to remove "${user.vaultName}" from the team?`,
+                async () => {
+                  await this.userManager.removeUser(user.vaultName);
+                  this.render();
+                  this.onUpdate();
+                }
+              ).open();
             });
           }
         }
@@ -3873,15 +3908,17 @@ var UserManagementModal = class extends import_obsidian3.Modal {
     const footerEl = contentEl.createEl("div", { cls: "collab-modal-footer" });
     if (currentUser) {
       new import_obsidian3.Setting(footerEl).addButton(
-        (btn) => btn.setButtonText("Unregister Me").setWarning().onClick(async () => {
-          const confirmed = confirm(
-            `Are you sure you want to unregister "${currentUser.vaultName}" from this machine?`
-          );
-          if (confirmed) {
-            await this.userManager.unregisterCurrentUser();
-            this.onUpdate();
-            this.close();
-          }
+        (btn) => btn.setButtonText("Unregister me").setWarning().onClick(() => {
+          new ConfirmModal(
+            this.app,
+            "Unregister from machine?",
+            `Are you sure you want to unregister "${currentUser.vaultName}" from this machine?`,
+            async () => {
+              await this.userManager.unregisterCurrentUser();
+              this.onUpdate();
+              this.close();
+            }
+          ).open();
         })
       ).addButton(
         (btn) => btn.setButtonText("Close").onClick(() => this.close())
@@ -3963,7 +4000,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
    */
   switchToTab(tab) {
     this.activeTab = tab;
-    this.render();
+    void this.render();
   }
   /**
    * Public method to switch to a specific channel (also switches to chat tab)
@@ -3971,7 +4008,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
   switchToChannel(channelId) {
     this.chatManager.setActiveChannel(channelId);
     this.activeTab = "chat";
-    this.render();
+    void this.render();
   }
   async render() {
     const container = this.containerEl.children[1];
@@ -4020,11 +4057,11 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     };
     inboxTab.addEventListener("click", () => {
       setActiveTab(inboxTab, "inbox");
-      this.renderInbox(contentEl);
+      void this.renderInbox(contentEl);
     });
     sentTab.addEventListener("click", () => {
       setActiveTab(sentTab, "sent");
-      this.renderSent(contentEl);
+      void this.renderSent(contentEl);
     });
     teamTab.addEventListener("click", async () => {
       setActiveTab(teamTab, "team");
@@ -4041,24 +4078,24 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     switch (this.activeTab) {
       case "sent":
         setActiveTab(sentTab, "sent");
-        this.renderSent(contentEl);
+        void this.renderSent(contentEl);
         break;
       case "team":
         setActiveTab(teamTab, "team");
-        this.renderTeam(contentEl);
+        void this.renderTeam(contentEl);
         break;
       case "chat":
         setActiveTab(chatTab, "chat");
-        this.renderChat(contentEl);
+        void this.renderChat(contentEl);
         break;
       case "reminders":
         setActiveTab(remindersTab, "reminders");
-        this.renderReminders(contentEl);
+        void this.renderReminders(contentEl);
         break;
       case "inbox":
       default:
         setActiveTab(inboxTab, "inbox");
-        this.renderInbox(contentEl);
+        void this.renderInbox(contentEl);
         break;
     }
   }
@@ -4078,7 +4115,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     filterSelect.value = this.inboxFilter;
     filterSelect.addEventListener("change", () => {
       this.inboxFilter = filterSelect.value;
-      this.renderInbox(container);
+      void this.renderInbox(container);
     });
     const actionWrapper = headerRow.createEl("div", { cls: "collab-inbox-actions" });
     const refreshBtn = actionWrapper.createEl("button", {
@@ -4088,7 +4125,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     });
     refreshBtn.addEventListener("click", async () => {
       await this.mentionParser.loadMentions();
-      this.renderInbox(container);
+      await this.renderInbox(container);
       new import_obsidian4.Notice("Inbox refreshed");
     });
     if (unreadCount > 0) {
@@ -4098,7 +4135,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       });
       markAllBtn.addEventListener("click", async () => {
         await this.mentionParser.markAllAsRead();
-        this.renderInbox(container);
+        await this.renderInbox(container);
       });
     }
     if (unreadCount > 0) {
@@ -4127,7 +4164,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     container.empty();
     container.removeClass("collab-chat-container");
     const headerRow = container.createEl("div", { cls: "collab-inbox-header" });
-    headerRow.createEl("span", { text: "Sent Mentions", cls: "collab-inbox-title" });
+    headerRow.createEl("span", { text: "Sent mentions", cls: "collab-inbox-title" });
     const refreshBtn = headerRow.createEl("button", {
       text: "\u{1F504}",
       cls: "collab-btn-small collab-refresh-btn",
@@ -4135,7 +4172,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     });
     refreshBtn.addEventListener("click", async () => {
       await this.mentionParser.loadMentions();
-      this.renderSent(container);
+      await this.renderSent(container);
       new import_obsidian4.Notice("Sent refreshed");
     });
     const mentions = this.mentionParser.getMentionsFromCurrentUser();
@@ -4154,7 +4191,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     container.empty();
     container.removeClass("collab-chat-container");
     const headerRow = container.createEl("div", { cls: "collab-inbox-header" });
-    headerRow.createEl("span", { text: "Team Members", cls: "collab-inbox-title" });
+    headerRow.createEl("span", { text: "Team members", cls: "collab-inbox-title" });
     const refreshBtn = headerRow.createEl("button", {
       text: "\u{1F504}",
       cls: "collab-btn-small collab-refresh-btn",
@@ -4163,7 +4200,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     refreshBtn.addEventListener("click", async () => {
       await this.userManager.loadPresence();
       await this.userManager.loadUsers();
-      this.renderTeam(container);
+      await this.renderTeam(container);
       new import_obsidian4.Notice("Team refreshed");
     });
     await this.userManager.loadPresence();
@@ -4172,7 +4209,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     if (currentUser) {
       const statusSection = container.createEl("div", { cls: "collab-status-selector-section" });
       const statusLabel = statusSection.createEl("span", {
-        text: "Your Status:",
+        text: "Your status:",
         cls: "collab-status-selector-label"
       });
       const statusSelect = statusSection.createEl("select", { cls: "collab-status-selector" });
@@ -4194,7 +4231,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       }
       statusSelect.addEventListener("change", async () => {
         await this.userManager.setManualStatus(statusSelect.value);
-        this.renderTeam(container);
+        await this.renderTeam(container);
       });
     }
     if (usersWithStatus.length === 0) {
@@ -4335,7 +4372,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         cls: "collab-reminder-action-btn",
         attr: { title: "Snooze" }
       });
-      snoozeBtn.innerHTML = "\u23F0";
+      snoozeBtn.setText("\u23F0");
       snoozeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         new SnoozeModal(this.app, this.reminderManager, reminder.id, onUpdate).open();
@@ -4344,7 +4381,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         cls: "collab-reminder-action-btn",
         attr: { title: "Edit" }
       });
-      editBtn.innerHTML = "\u270F\uFE0F";
+      editBtn.setText("\u270F\uFE0F");
       editBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         new EditReminderModal(this.app, this.reminderManager, reminder, onUpdate).open();
@@ -4354,7 +4391,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-reminder-action-btn",
       attr: { title: "Delete" }
     });
-    deleteBtn.innerHTML = "\u{1F5D1}\uFE0F";
+    deleteBtn.setText("\u{1F5D1}\uFE0F");
     deleteBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
       await this.reminderManager.deleteReminder(reminder.id);
@@ -4378,7 +4415,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       nameEl.createEl("span", {
         text: userInfo2.adminLevel === "primary" ? " \u{1F451}" : " \u2B50",
         cls: "collab-admin-indicator",
-        attr: { title: userInfo2.adminLevel === "primary" ? "Primary Admin" : "Admin" }
+        attr: { title: userInfo2.adminLevel === "primary" ? "Primary admin" : "Admin" }
       });
     }
     const statusText = this.getStatusText(user.status, user.lastSeen);
@@ -4395,17 +4432,21 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         cls: "collab-team-remove-btn",
         attr: { title: `Remove @${user.vaultName} from team` }
       });
-      removeBtn.addEventListener("click", async (e) => {
+      removeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const confirmed = confirm(`Are you sure you want to remove @${user.vaultName} from the team?`);
-        if (confirmed) {
-          await this.userManager.removeUser(user.vaultName);
-          const teamContainer = container.parentElement;
-          if (teamContainer) {
-            await this.renderTeam(teamContainer);
+        new ConfirmActionModal(
+          this.app,
+          "Remove team member?",
+          `Are you sure you want to remove @${user.vaultName} from the team?`,
+          async () => {
+            await this.userManager.removeUser(user.vaultName);
+            const teamContainer = container.parentElement;
+            if (teamContainer) {
+              await this.renderTeam(teamContainer);
+            }
+            new import_obsidian4.Notice(`@${user.vaultName} has been removed from the team`);
           }
-          new import_obsidian4.Notice(`@${user.vaultName} has been removed from the team`);
-        }
+        ).open();
       });
     }
   }
@@ -4576,7 +4617,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         this.chatSearchQuery = "";
         this.chatSearchResults = [];
         if (this.chatContainer) {
-          this.renderChat(this.chatContainer);
+          void this.renderChat(this.chatContainer);
         }
       });
     }
@@ -4720,7 +4761,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
             this.chatSearchQuery = "";
             this.chatSearchResults = [];
             if (this.chatContainer) {
-              this.renderChat(this.chatContainer);
+              void this.renderChat(this.chatContainer);
             }
           });
           lastChannelId = msg.channelId;
@@ -4740,7 +4781,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
             this.chatSearchQuery = "";
             this.chatSearchResults = [];
             if (this.chatContainer) {
-              this.renderChat(this.chatContainer);
+              void this.renderChat(this.chatContainer);
             }
           });
         }
@@ -4771,17 +4812,18 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       }
     }
     const jumpBtn = messagesWrapper.createEl("button", {
-      cls: "collab-jump-to-bottom",
+      cls: "collab-jump-to-bottom collab-hidden",
       text: "\u2193 Jump to latest"
     });
-    jumpBtn.style.display = "none";
     messagesEl.addEventListener("scroll", () => {
       const isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
-      jumpBtn.style.display = isNearBottom ? "none" : "flex";
+      jumpBtn.toggleClass("collab-hidden", isNearBottom);
+      jumpBtn.toggleClass("collab-visible", !isNearBottom);
     });
     jumpBtn.addEventListener("click", () => {
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      jumpBtn.style.display = "none";
+      jumpBtn.addClass("collab-hidden");
+      jumpBtn.removeClass("collab-visible");
     });
     messagesEl.scrollTop = messagesEl.scrollHeight;
     const imagePreviewArea = container.createEl("div", { cls: "collab-chat-image-preview" });
@@ -4790,8 +4832,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
   }
   // Timeout for clearing typing status
   renderMessageInput(container, imagePreviewArea) {
-    const typingIndicator = container.createEl("div", { cls: "collab-typing-indicator" });
-    typingIndicator.style.display = "none";
+    const typingIndicator = container.createEl("div", { cls: "collab-typing-indicator collab-hidden" });
     this.typingIndicatorEl = typingIndicator;
     this.updateTypingIndicator();
     const inputArea = container.createEl("div", { cls: "collab-chat-input-area" });
@@ -4843,7 +4884,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-chat-btn",
       attr: { title: "Insert file link [[filename]]" }
     });
-    fileLinkBtn.innerHTML = "\u{1F4C4}";
+    fileLinkBtn.setText("\u{1F4C4}");
     fileLinkBtn.addEventListener("click", () => {
       new FileLinkModal(this.app, (filePath) => {
         const linkText = `[[${filePath}]]`;
@@ -4859,7 +4900,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-chat-btn",
       attr: { title: "Attach image (or paste from clipboard)" }
     });
-    imageBtn.innerHTML = "\u{1F5BC}\uFE0F";
+    imageBtn.setText("\u{1F5BC}\uFE0F");
     const imageInput = leftButtons.createEl("input", {
       attr: { type: "file", accept: "image/*", style: "display: none" }
     });
@@ -4881,7 +4922,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-chat-btn",
       attr: { title: "Mention someone @name" }
     });
-    mentionBtn.innerHTML = "@";
+    mentionBtn.setText("@");
     mentionBtn.addEventListener("click", () => {
       new UserMentionModal(this.app, this.userManager, (username) => {
         const mentionText = `@${username} `;
@@ -4951,10 +4992,12 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     const activeChannelId = this.chatManager.getActiveChannelId();
     const typingUsers = this.userManager.getTypingUsers(activeChannelId);
     if (typingUsers.length === 0) {
-      this.typingIndicatorEl.style.display = "none";
+      this.typingIndicatorEl.addClass("collab-hidden");
+      this.typingIndicatorEl.removeClass("collab-visible");
       return;
     }
-    this.typingIndicatorEl.style.display = "flex";
+    this.typingIndicatorEl.removeClass("collab-hidden");
+    this.typingIndicatorEl.addClass("collab-visible");
     let text;
     if (typingUsers.length === 1) {
       text = `${typingUsers[0]} is typing...`;
@@ -4963,7 +5006,9 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     } else {
       text = `${typingUsers.length} people are typing...`;
     }
-    this.typingIndicatorEl.innerHTML = `<span class="collab-typing-dots">\u2022\u2022\u2022</span> ${text}`;
+    this.typingIndicatorEl.empty();
+    this.typingIndicatorEl.createEl("span", { text: "\u2022\u2022\u2022", cls: "collab-typing-dots" });
+    this.typingIndicatorEl.appendText(" " + text);
   }
   showNewChannelModal() {
     new NewChannelModal(this.app, this.userManager, this.chatManager, async (channel) => {
@@ -4983,10 +5028,12 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
   updateImagePreview(container) {
     container.empty();
     if (this.pendingImages.length === 0) {
-      container.style.display = "none";
+      container.addClass("collab-hidden");
+      container.removeClass("collab-visible");
       return;
     }
-    container.style.display = "flex";
+    container.removeClass("collab-hidden");
+    container.addClass("collab-visible");
     for (const img of this.pendingImages) {
       const previewItem = container.createEl("div", { cls: "collab-image-preview-item" });
       const imgEl = previewItem.createEl("img", {
@@ -5024,7 +5071,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         cls: "collab-chat-message system"
       });
       const contentEl2 = msgEl2.createEl("span", { cls: "collab-system-msg-content" });
-      let messageText = msg.message;
+      const messageText = msg.message;
       const fileLinkRegex = /\[\[([^\]]+)\]\]/g;
       let lastIndex = 0;
       let match;
@@ -5143,7 +5190,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-chat-action-btn",
       attr: { title: "Reply" }
     });
-    replyBtn.innerHTML = "\u21A9\uFE0F";
+    replyBtn.setText("\u21A9\uFE0F");
     replyBtn.addEventListener("click", (e) => {
       var _a2;
       e.stopPropagation();
@@ -5157,7 +5204,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-chat-action-btn",
       attr: { title: "Add reaction" }
     });
-    addReactionBtn.innerHTML = "\u{1F60A}";
+    addReactionBtn.setText("\u{1F60A}");
     addReactionBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.showReactionPicker(msg.id, addReactionBtn);
@@ -5167,7 +5214,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         cls: "collab-chat-action-btn",
         attr: { title: "Edit message" }
       });
-      editBtn.innerHTML = "\u270F\uFE0F";
+      editBtn.setText("\u270F\uFE0F");
       editBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         new EditMessageModal(this.app, msg.message, async (newContent) => {
@@ -5181,7 +5228,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         cls: "collab-chat-action-btn",
         attr: { title: "Delete message" }
       });
-      deleteBtn.innerHTML = "\u{1F5D1}\uFE0F";
+      deleteBtn.setText("\u{1F5D1}\uFE0F");
       deleteBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         new ConfirmDeleteModal(this.app, async () => {
@@ -5210,8 +5257,8 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       });
       picker.appendChild(btn);
     }
-    picker.style.position = "fixed";
-    picker.style.visibility = "hidden";
+    picker.addClass("collab-position-fixed");
+    picker.addClass("collab-visibility-hidden");
     document.body.appendChild(picker);
     const rect = anchorEl.getBoundingClientRect();
     const pickerRect = picker.getBoundingClientRect();
@@ -5228,9 +5275,9 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     if (left < 8) {
       left = 8;
     }
-    picker.style.left = `${left}px`;
-    picker.style.top = `${top}px`;
-    picker.style.visibility = "visible";
+    picker.setCssProps({ "--picker-left": `${left}px`, "--picker-top": `${top}px` });
+    picker.removeClass("collab-visibility-hidden");
+    picker.addClass("collab-visibility-visible");
     const closeHandler = (e) => {
       if (!picker.contains(e.target)) {
         picker.remove();
@@ -5240,7 +5287,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     setTimeout(() => document.addEventListener("click", closeHandler), 0);
   }
   renderMessageContent(container, message, isOwn) {
-    const combinedRegex = /(\[\[[^\]]+\]\])|(@#[\w-]+)|(@\w+)|(https?:\/\/[^\s<>\[\]]+)/g;
+    const combinedRegex = /(\[\[[^\]]+\]\])|(@#[\w-]+)|(@\w+)|(https?:\/\/[^\s<>[\]]+)/g;
     let lastIndex = 0;
     let match;
     while ((match = combinedRegex.exec(message)) !== null) {
@@ -5315,12 +5362,16 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
   openImageModal(imagePath) {
     const modal = document.createElement("div");
     modal.className = "collab-image-modal";
-    modal.innerHTML = `
-            <div class="collab-image-modal-content">
-                <img src="${this.app.vault.adapter.getResourcePath(imagePath)}" />
-                <button class="collab-image-modal-close">\xD7</button>
-            </div>
-        `;
+    const content = document.createElement("div");
+    content.className = "collab-image-modal-content";
+    const img = document.createElement("img");
+    img.src = this.app.vault.adapter.getResourcePath(imagePath);
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "collab-image-modal-close";
+    closeBtn.textContent = "\xD7";
+    content.appendChild(img);
+    content.appendChild(closeBtn);
+    modal.appendChild(content);
     modal.addEventListener("click", (e) => {
       if (e.target === modal || e.target.classList.contains("collab-image-modal-close")) {
         modal.remove();
@@ -5444,7 +5495,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
             this.chatSearchQuery = "";
             this.chatSearchResults = [];
             if (this.chatContainer) {
-              this.renderChat(this.chatContainer);
+              void this.renderChat(this.chatContainer);
             }
           });
           lastChannelId = msg.channelId;
@@ -5464,7 +5515,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
             this.chatSearchQuery = "";
             this.chatSearchResults = [];
             if (this.chatContainer) {
-              this.renderChat(this.chatContainer);
+              void this.renderChat(this.chatContainer);
             }
           });
         }
@@ -5725,7 +5776,7 @@ var EditMessageModal = class extends import_obsidian4.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("collab-edit-message-modal");
-    contentEl.createEl("h3", { text: "Edit Message" });
+    contentEl.createEl("h3", { text: "Edit message" });
     const textarea = contentEl.createEl("textarea", {
       cls: "collab-edit-message-input",
       attr: { rows: "4" }
@@ -5767,19 +5818,19 @@ var NewChannelModal = class extends import_obsidian4.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("collab-new-channel-modal");
-    contentEl.createEl("h3", { text: "New Conversation" });
+    contentEl.createEl("h3", { text: "New conversation" });
     const tabsEl = contentEl.createEl("div", { cls: "collab-modal-tabs" });
-    const groupTab = tabsEl.createEl("button", { text: "Group Channel", cls: "active" });
-    const dmTab = tabsEl.createEl("button", { text: "Direct Message" });
+    const groupTab = tabsEl.createEl("button", { text: "Group channel", cls: "active" });
+    const dmTab = tabsEl.createEl("button", { text: "Direct message" });
     const formEl = contentEl.createEl("div", { cls: "collab-modal-form" });
     const renderGroupForm = () => {
       formEl.empty();
       this.activeTab = "group";
-      formEl.createEl("label", { text: "Channel Name" });
+      formEl.createEl("label", { text: "Channel name" });
       const nameInput = formEl.createEl("input", {
         attr: { type: "text", placeholder: "e.g., project-alpha" }
       });
-      formEl.createEl("label", { text: "Add Members" });
+      formEl.createEl("label", { text: "Add members" });
       const membersContainer = formEl.createEl("div", { cls: "collab-member-select" });
       const currentUser = this.userManager.getCurrentUser();
       const allUsers = this.userManager.getAllUsers();
@@ -5803,7 +5854,7 @@ var NewChannelModal = class extends import_obsidian4.Modal {
         });
       }
       const createBtn = formEl.createEl("button", {
-        text: "Create Channel",
+        text: "Create channel",
         cls: "collab-create-btn"
       });
       createBtn.addEventListener("click", async () => {
@@ -5822,7 +5873,7 @@ var NewChannelModal = class extends import_obsidian4.Modal {
     const renderDMForm = () => {
       formEl.empty();
       this.activeTab = "dm";
-      formEl.createEl("label", { text: "Select User" });
+      formEl.createEl("label", { text: "Select user" });
       const userSelect = formEl.createEl("select", { cls: "collab-user-select" });
       const currentUser = this.userManager.getCurrentUser();
       const allUsers = this.userManager.getAllUsers();
@@ -5832,7 +5883,7 @@ var NewChannelModal = class extends import_obsidian4.Modal {
         userSelect.createEl("option", { value: user.vaultName, text: `@${user.vaultName}` });
       }
       const startBtn = formEl.createEl("button", {
-        text: "Start Conversation",
+        text: "Start conversation",
         cls: "collab-create-btn"
       });
       startBtn.addEventListener("click", async () => {
@@ -5873,7 +5924,7 @@ var AddMemberModal = class extends import_obsidian4.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("collab-add-member-modal");
-    contentEl.createEl("h3", { text: "Add Member" });
+    contentEl.createEl("h3", { text: "Add member" });
     contentEl.createEl("p", {
       text: `Current members: ${this.channel.members.join(", ")}`,
       cls: "collab-current-members"
@@ -5891,13 +5942,13 @@ var AddMemberModal = class extends import_obsidian4.Modal {
       contentEl.createEl("p", { text: "All team members are already in this channel." });
       return;
     }
-    contentEl.createEl("label", { text: "Select User" });
+    contentEl.createEl("label", { text: "Select user" });
     const userSelect = contentEl.createEl("select", { cls: "collab-user-select" });
     for (const user of availableUsers) {
       userSelect.createEl("option", { value: user.vaultName, text: `@${user.vaultName}` });
     }
     const addBtn = contentEl.createEl("button", {
-      text: "Add Member",
+      text: "Add member",
       cls: "collab-create-btn"
     });
     addBtn.addEventListener("click", async () => {
@@ -5923,7 +5974,7 @@ var ConfirmDeleteModal = class extends import_obsidian4.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("collab-confirm-modal");
-    contentEl.createEl("h3", { text: "Delete Message?" });
+    contentEl.createEl("h3", { text: "Delete message?" });
     contentEl.createEl("p", { text: "This action cannot be undone." });
     const buttonRow = contentEl.createEl("div", { cls: "collab-confirm-buttons" });
     const cancelBtn = buttonRow.createEl("button", {
@@ -6082,7 +6133,7 @@ var NewReminderModal = class extends import_obsidian4.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("collab-reminder-modal");
-    contentEl.createEl("h3", { text: "New Reminder" });
+    contentEl.createEl("h3", { text: "New reminder" });
     contentEl.createEl("label", { text: "What do you want to remember?" });
     const messageInput = contentEl.createEl("textarea", {
       cls: "collab-reminder-message-input",
@@ -6148,7 +6199,7 @@ var NewReminderModal = class extends import_obsidian4.Modal {
     });
     cancelBtn.addEventListener("click", () => this.close());
     const createBtn = buttonRow.createEl("button", {
-      text: "Create Reminder",
+      text: "Create reminder",
       cls: "collab-reminder-create-btn"
     });
     createBtn.addEventListener("click", async () => {
@@ -6204,7 +6255,7 @@ var EditReminderModal = class extends import_obsidian4.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("collab-reminder-modal");
-    contentEl.createEl("h3", { text: "Edit Reminder" });
+    contentEl.createEl("h3", { text: "Edit reminder" });
     contentEl.createEl("label", { text: "Message" });
     const messageInput = contentEl.createEl("textarea", {
       cls: "collab-reminder-message-input",
@@ -6287,7 +6338,7 @@ var SnoozeModal = class extends import_obsidian4.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("collab-snooze-modal");
-    contentEl.createEl("h3", { text: "Snooze Reminder" });
+    contentEl.createEl("h3", { text: "Snooze reminder" });
     contentEl.createEl("p", { text: "Remind me again in..." });
     const optionsEl = contentEl.createEl("div", { cls: "collab-snooze-options" });
     const snoozeOptions = [
@@ -6338,7 +6389,7 @@ var ReminderNotificationModal = class extends import_obsidian4.Modal {
     this.onAction = onAction;
   }
   onOpen() {
-    console.log("[Collab-Mentions] ReminderNotificationModal onOpen called for:", this.reminder.id, this.reminder.message.substring(0, 30));
+    console.debug("[Collab-Mentions] ReminderNotificationModal onOpen called for:", this.reminder.id, this.reminder.message.substring(0, 30));
     const { contentEl, modalEl } = this;
     contentEl.empty();
     contentEl.addClass("collab-reminder-notification-modal");
@@ -6385,7 +6436,7 @@ var ReminderNotificationModal = class extends import_obsidian4.Modal {
     }
     const buttonRow = actionsEl.createEl("div", { cls: "collab-reminder-notif-buttons" });
     const completeBtn = buttonRow.createEl("button", {
-      text: "\u2713 Mark Complete",
+      text: "\u2713 Mark complete",
       cls: "collab-reminder-notif-complete-btn"
     });
     completeBtn.addEventListener("click", async () => {
@@ -6447,7 +6498,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
   }
   // Track last cleanup time
   async onload() {
-    console.log("Loading Collab Mentions plugin");
+    console.debug("Loading Collab Mentions plugin");
     await this.loadSettings();
     await this.saveSettings();
     this.userManager = new UserManager(this.app);
@@ -6487,8 +6538,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       }
     });
     this.ribbonIconEl.addClass("collab-ribbon-icon");
-    const badgeEl = this.ribbonIconEl.createEl("span", { cls: "collab-ribbon-badge" });
-    badgeEl.style.display = "none";
+    const badgeEl = this.ribbonIconEl.createEl("span", { cls: "collab-ribbon-badge collab-hidden" });
     this.addCommand({
       id: "open-mentions-panel",
       name: "Open mentions panel",
@@ -6539,19 +6589,19 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     const pendingFiles = /* @__PURE__ */ new Map();
     let followUpTimer = null;
     const processFileForMentions = async (file) => {
-      console.log("[Collab-Mentions] Processing file for mentions:", file.path);
+      console.debug("[Collab-Mentions] Processing file for mentions:", file.path);
       if (this.userManager.isRegistered()) {
         const newMentions = await this.mentionParser.processFile(file);
-        console.log("[Collab-Mentions] New mentions found:", newMentions.length);
+        console.debug("[Collab-Mentions] New mentions found:", newMentions.length);
         for (const mention of newMentions) {
-          console.log("[Collab-Mentions] Notifying mention to:", mention.to);
+          console.debug("[Collab-Mentions] Notifying mention to:", mention.to);
           this.notifier.notifyNewMention(mention);
         }
       }
     };
     const debouncedProcessFile = (0, import_obsidian5.debounce)(
       async (file) => {
-        console.log("[Collab-Mentions] File modified (immediate):", file.path);
+        console.debug("[Collab-Mentions] File modified (immediate):", file.path);
         await processFileForMentions(file);
       },
       1e3,
@@ -6567,7 +6617,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
           }
           followUpTimer = window.setTimeout(async () => {
             if (pendingFiles.size > 0) {
-              console.log("[Collab-Mentions] Follow-up processing", pendingFiles.size, "files");
+              console.debug("[Collab-Mentions] Follow-up processing", pendingFiles.size, "files");
               for (const [path, pendingFile] of pendingFiles) {
                 await processFileForMentions(pendingFile);
               }
@@ -6640,7 +6690,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
         }
         const dueReminders = await this.reminderManager.checkDueReminders();
         if (dueReminders.length > 0) {
-          console.log("[Collab-Mentions] Due reminders on startup:", dueReminders.length);
+          console.debug("[Collab-Mentions] Due reminders on startup:", dueReminders.length);
           for (const reminder of dueReminders) {
             this.notifiedReminderIds.add(reminder.id);
           }
@@ -6671,7 +6721,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     }
   }
   async onunload() {
-    console.log("Unloading Collab Mentions plugin");
+    console.debug("Unloading Collab Mentions plugin");
     this.stopFileWatcher();
     this.stopHeartbeat();
     this.stopCleanupInterval();
@@ -6682,7 +6732,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
    * Called after a user successfully registers - starts file watcher and heartbeat
    */
   onUserRegistered() {
-    console.log("[Collab-Mentions] User registered, starting services...");
+    console.debug("[Collab-Mentions] User registered, starting services...");
     if (this.settings.enableFileWatcher) {
       this.startFileWatcher();
     }
@@ -6695,9 +6745,9 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
    * Show notification for a due reminder with centered modal
    */
   showReminderNotification(reminder) {
-    console.log("[Collab-Mentions] showReminderNotification called for:", reminder.message.substring(0, 30), "id:", reminder.id);
+    console.debug("[Collab-Mentions] showReminderNotification called for:", reminder.message.substring(0, 30), "id:", reminder.id);
     if (this.notifiedReminderIds.has(reminder.id)) {
-      console.log("[Collab-Mentions] Skipping duplicate notification for reminder:", reminder.id);
+      console.debug("[Collab-Mentions] Skipping duplicate notification for reminder:", reminder.id);
       return;
     }
     this.notifiedReminderIds.add(reminder.id);
@@ -6707,7 +6757,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       this.reminderManager,
       () => this.refreshPanel()
     );
-    console.log("[Collab-Mentions] Opening ReminderNotificationModal for:", reminder.id);
+    console.debug("[Collab-Mentions] Opening ReminderNotificationModal for:", reminder.id);
     modal.open();
   }
   async loadSettings() {
@@ -6794,9 +6844,11 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     const totalUnread = unreadMentions + unreadChat;
     if (totalUnread > 0) {
       badgeEl.textContent = totalUnread > 99 ? "99+" : String(totalUnread);
-      badgeEl.style.display = "flex";
+      badgeEl.removeClass("collab-hidden");
+      badgeEl.addClass("collab-visible");
     } else {
-      badgeEl.style.display = "none";
+      badgeEl.removeClass("collab-visible");
+      badgeEl.addClass("collab-hidden");
     }
   }
   /**
@@ -6833,42 +6885,46 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       return;
     }
     if (currentHash && currentHash !== this.lastMentionsFileHash) {
-      console.log("Mentions file changed, reloading...");
+      console.debug("Mentions file changed, reloading...");
       await this.mentionParser.loadMentions();
       const unread = this.mentionParser.getUnreadMentions();
-      console.log("[Collab-Mentions] Total unread mentions for current user:", unread.length);
+      console.debug("[Collab-Mentions] Total unread mentions for current user:", unread.length);
       const newUnread = [];
       for (const mention of unread) {
         if (this.notifiedMentionIds.has(mention.id)) {
-          console.log("[Collab-Mentions] Skipping mention (already notified by ID):", mention.id, "from:", mention.from);
+          console.debug("[Collab-Mentions] Skipping mention (already notified by ID):", mention.id, "from:", mention.from);
           continue;
         }
         const contentHash = this.mentionParser.getMentionContentHash(mention);
         if (this.notifiedContentHashes.has(contentHash)) {
-          console.log("[Collab-Mentions] Skipping mention (already notified by hash):", mention.id, "from:", mention.from);
+          console.debug("[Collab-Mentions] Skipping mention (already notified by hash):", mention.id, "from:", mention.from);
           continue;
         }
-        console.log("[Collab-Mentions] NEW mention to notify:", mention.id, "from:", mention.from, "context:", mention.context.substring(0, 50));
+        console.debug("[Collab-Mentions] NEW mention to notify:", mention.id, "from:", mention.from, "context:", mention.context.substring(0, 50));
         newUnread.push(mention);
         this.notifiedMentionIds.add(mention.id);
         this.notifiedContentHashes.add(contentHash);
       }
       if (newUnread.length > 0 && this.settings.enableNotifications) {
-        console.log("[Collab-Mentions] New unread mentions to notify:", newUnread.length);
+        console.debug("[Collab-Mentions] New unread mentions to notify:", newUnread.length);
         if (newUnread.length > 3) {
           const uniqueSenders = [...new Set(newUnread.map((m) => m.from))];
           const senderText = uniqueSenders.length === 1 ? `from @${uniqueSenders[0]}` : `from ${uniqueSenders.length} people`;
           this.showCenteredNotification(
             "\u{1F4E3} New Mentions",
             `You have ${newUnread.length} new mentions ${senderText}`,
-            () => this.activateMentionPanel({ tab: "inbox" })
+            () => {
+              void this.activateMentionPanel({ tab: "inbox" });
+            }
           );
         } else {
           for (const mention of newUnread) {
             this.showCenteredNotification(
               "\u{1F4E3} New Mention",
               `@${mention.from} mentioned you: "${this.truncateText(mention.context, 50)}"`,
-              () => this.activateMentionPanel({ tab: "inbox" })
+              () => {
+                void this.activateMentionPanel({ tab: "inbox" });
+              }
             );
           }
         }
@@ -6905,14 +6961,14 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       return;
     }
     if (currentHash && currentHash !== this.lastChatFileHash) {
-      console.log("Chat file changed, reloading...");
+      console.debug("Chat file changed, reloading...");
       await this.chatManager.loadChat();
       if (currentUser && this.settings.enableNotifications) {
         const currentChannels = this.chatManager.getChannelsForUser(currentUser.vaultName);
         const currentChannelIds = new Set(currentChannels.map((ch) => ch.id));
         for (const knownId of this.knownChannelIds) {
           if (!currentChannelIds.has(knownId)) {
-            console.log("[Collab-Mentions] User left channel, removing from known:", knownId);
+            console.debug("[Collab-Mentions] User left channel, removing from known:", knownId);
             this.knownChannelIds.delete(knownId);
             this.lastKnownMessageIds.delete(knownId);
           }
@@ -6921,7 +6977,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
         for (const channel of newChannels) {
           const isActuallyMember = channel.type === "general" || channel.members.includes(currentUser.vaultName);
           if (!isActuallyMember) {
-            console.log(
+            console.debug(
               "[Collab-Mentions] Skipping channel notification - user not actually a member:",
               channel.id,
               channel.name,
@@ -6932,7 +6988,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
             continue;
           }
           const channelId = channel.id;
-          console.log(
+          console.debug(
             "[Collab-Mentions] User added to channel:",
             channel.id,
             channel.name,
@@ -6943,7 +6999,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
             "\u{1F4AC} New Channel",
             `You were added to "${channel.name || "a conversation"}"`,
             () => {
-              this.activateMentionPanel({ channelId });
+              void this.activateMentionPanel({ channelId });
             }
           );
           this.knownChannelIds.add(channel.id);
@@ -6953,7 +7009,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
             this.notifier.playSound();
           }
         }
-        let newMessagesFromOthers = [];
+        const newMessagesFromOthers = [];
         for (const channel of currentChannels) {
           if (!this.knownChannelIds.has(channel.id))
             continue;
@@ -6979,7 +7035,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
           this.lastKnownMessageIds.set(channel.id, new Set(messages.map((m) => m.id)));
         }
         if (newMessagesFromOthers.length > 0) {
-          console.log(
+          console.debug(
             "[Collab-Mentions] New messages from others:",
             newMessagesFromOthers.length,
             newMessagesFromOthers.map((m) => ({
@@ -7002,7 +7058,9 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
             this.showCenteredNotification(
               "\u{1F4AC} New Messages",
               `${newMessagesFromOthers.length} new messages ${senderText} ${channelText}`,
-              () => this.activateMentionPanel({ channelId: firstChannelId })
+              () => {
+                void this.activateMentionPanel({ channelId: firstChannelId });
+              }
             );
           } else {
             for (const { channelId, channelName, message } of newMessagesFromOthers) {
@@ -7020,7 +7078,9 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
               this.showCenteredNotification(
                 "\u{1F4AC} New Message",
                 notificationText,
-                () => this.activateMentionPanel({ channelId })
+                () => {
+                  void this.activateMentionPanel({ channelId });
+                }
               );
             }
           }
@@ -7052,7 +7112,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       return;
     }
     if (currentHash && currentHash !== this.lastUsersFileHash) {
-      console.log("Users file changed, reloading...");
+      console.debug("Users file changed, reloading...");
       await this.userManager.loadUsers();
       this.refreshPanel();
       this.lastUsersFileHash = currentHash;
@@ -7076,13 +7136,13 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       return;
     }
     if (currentHash && currentHash !== this.lastRemindersFileHash) {
-      console.log("[Collab-Mentions] Reminders file changed, reloading...");
+      console.debug("[Collab-Mentions] Reminders file changed, reloading...");
       await this.reminderManager.loadReminders();
       const dueReminders = await this.reminderManager.checkDueReminders();
       for (const reminder of dueReminders) {
         if (!this.notifiedReminderIds.has(reminder.id)) {
           this.notifiedReminderIds.add(reminder.id);
-          console.log("[Collab-Mentions] Notified for reminder:", reminder.id, reminder.message.substring(0, 30));
+          console.debug("[Collab-Mentions] Notified for reminder:", reminder.id, reminder.message.substring(0, 30));
         }
       }
       this.refreshPanel();
@@ -7090,12 +7150,12 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     }
   }
   showCenteredNotification(title, message, onClick) {
-    console.log("[Collab-Mentions] showCenteredNotification called:", title, message);
+    console.debug("[Collab-Mentions] showCenteredNotification called:", title, message);
     const notification = document.createElement("div");
     notification.className = "collab-stacked-notification";
     const existingCount = this.activeNotifications.length;
     const topOffset = 20 + existingCount * 90;
-    notification.style.top = `${topOffset}px`;
+    notification.setCssProps({ "--notification-top": `${topOffset}px` });
     const titleEl = document.createElement("h3");
     titleEl.textContent = title;
     notification.appendChild(titleEl);
@@ -7135,7 +7195,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       this.activeNotifications.splice(index, 1);
     }
     this.activeNotifications.forEach((n, i) => {
-      n.style.top = `${20 + i * 90}px`;
+      n.setCssProps({ "--notification-top": `${20 + i * 90}px` });
     });
   }
   truncateText(text, maxLength) {
@@ -7148,7 +7208,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     if (this.fileWatcherInterval !== null) {
       return;
     }
-    console.log("Starting mentions file watcher...");
+    console.debug("Starting mentions file watcher...");
     this.fileWatcherInterval = window.setInterval(async () => {
       await this.checkForMentionsFileChanges();
       await this.checkForChatFileChanges();
@@ -7158,19 +7218,19 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     }, 3e3);
     this.getMentionsFileHash().then((hash) => {
       this.lastMentionsFileHash = hash;
-      console.log("[Collab-Mentions] Initialized mentions hash");
+      console.debug("[Collab-Mentions] Initialized mentions hash");
     });
     this.getChatFileHash().then((hash) => {
       this.lastChatFileHash = hash;
-      console.log("[Collab-Mentions] Initialized chat hash");
+      console.debug("[Collab-Mentions] Initialized chat hash");
     });
     this.getUsersFileHash().then((hash) => {
       this.lastUsersFileHash = hash;
-      console.log("[Collab-Mentions] Initialized users hash");
+      console.debug("[Collab-Mentions] Initialized users hash");
     });
     this.getRemindersFileHash().then((hash) => {
       this.lastRemindersFileHash = hash;
-      console.log("[Collab-Mentions] Initialized reminders hash");
+      console.debug("[Collab-Mentions] Initialized reminders hash");
     });
     const unread = this.mentionParser.getUnreadMentions();
     unread.forEach((m) => {
@@ -7178,7 +7238,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       const contentHash = this.mentionParser.getMentionContentHash(m);
       this.notifiedContentHashes.add(contentHash);
     });
-    console.log("[Collab-Mentions] Initialized mention tracking:", unread.length, "mentions");
+    console.debug("[Collab-Mentions] Initialized mention tracking:", unread.length, "mentions");
     const currentUser = this.userManager.getCurrentUser();
     if (currentUser) {
       const channels = this.chatManager.getChannelsForUser(currentUser.vaultName);
@@ -7194,7 +7254,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
           }
         }
       }
-      console.log("[Collab-Mentions] Initialized channel tracking:", channels.length, "channels");
+      console.debug("[Collab-Mentions] Initialized channel tracking:", channels.length, "channels");
       const reminders = this.reminderManager.getReminders();
       for (const reminder of reminders) {
         if (reminder.completed)
@@ -7207,13 +7267,13 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
           this.notifiedReminderIds.add(reminder.id);
         }
       }
-      console.log("[Collab-Mentions] Initialized reminder tracking:", this.notifiedReminderIds.size, "notified reminders");
+      console.debug("[Collab-Mentions] Initialized reminder tracking:", this.notifiedReminderIds.size, "notified reminders");
     }
     this.startCleanupInterval();
   }
   stopFileWatcher() {
     if (this.fileWatcherInterval !== null) {
-      console.log("Stopping mentions file watcher...");
+      console.debug("Stopping mentions file watcher...");
       window.clearInterval(this.fileWatcherInterval);
       this.fileWatcherInterval = null;
     }
@@ -7232,7 +7292,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     if (this.cleanupInterval !== null) {
       return;
     }
-    console.log("[Collab-Mentions] Starting periodic cleanup interval...");
+    console.debug("[Collab-Mentions] Starting periodic cleanup interval...");
     this.cleanupInterval = window.setInterval(() => {
       this.cleanupNotificationTracking();
     }, 30 * 60 * 1e3);
@@ -7243,7 +7303,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
    */
   stopCleanupInterval() {
     if (this.cleanupInterval !== null) {
-      console.log("[Collab-Mentions] Stopping cleanup interval...");
+      console.debug("[Collab-Mentions] Stopping cleanup interval...");
       window.clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
@@ -7306,7 +7366,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     };
     const cleaned = startSize.mentionIds - endSize.mentionIds + (startSize.contentHashes - endSize.contentHashes) + (startSize.messageHashes - endSize.messageHashes) + (startSize.reminderIds - endSize.reminderIds) + (startSize.channelIds - endSize.channelIds);
     if (cleaned > 0) {
-      console.log("[Collab-Mentions] Cleanup completed:", {
+      console.debug("[Collab-Mentions] Cleanup completed:", {
         mentionIds: `${startSize.mentionIds} \u2192 ${endSize.mentionIds}`,
         contentHashes: `${startSize.contentHashes} \u2192 ${endSize.contentHashes}`,
         messageHashes: `${startSize.messageHashes} \u2192 ${endSize.messageHashes}`,
@@ -7325,7 +7385,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     if (this.heartbeatInterval !== null) {
       return;
     }
-    console.log("Starting presence heartbeat...");
+    console.debug("Starting presence heartbeat...");
     const getActiveFile = () => {
       const activeFile = this.app.workspace.getActiveFile();
       return activeFile == null ? void 0 : activeFile.path;
@@ -7350,7 +7410,9 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
               this.showCenteredNotification(
                 "\u{1F4AC} Welcome Back!",
                 `You have ${unreadCount} unread message${unreadCount > 1 ? "s" : ""} while you were away`,
-                () => this.activateMentionPanel({ tab: "chat" })
+                () => {
+                  void this.activateMentionPanel({ tab: "chat" });
+                }
               );
               this.lastUnreadNotificationTime = now;
             }
@@ -7362,7 +7424,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
   }
   stopHeartbeat() {
     if (this.heartbeatInterval !== null) {
-      console.log("Stopping presence heartbeat...");
+      console.debug("Stopping presence heartbeat...");
       window.clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
@@ -7451,7 +7513,7 @@ var MentionSuggest = class extends import_obsidian5.EditorSuggest {
       }
     } else {
       const colorDot = container.createEl("span", { cls: "collab-user-dot" });
-      colorDot.style.backgroundColor = suggestion.color || "#7c3aed";
+      colorDot.setCssProps({ "--user-dot-color": suggestion.color || "#7c3aed" });
       container.createEl("span", {
         text: `@${suggestion.vaultName}`,
         cls: "collab-suggestion-name"
@@ -7490,7 +7552,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Collab Mentions Settings" });
+    new import_obsidian5.Setting(containerEl).setName("Collab Mentions settings").setHeading();
     const currentUser = this.plugin.userManager.getCurrentUser();
     const isAdmin = this.plugin.userManager.isCurrentUserAdmin();
     if (currentUser) {
@@ -7500,7 +7562,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
       if (isAdmin) {
         const isPrimary = this.plugin.userManager.isCurrentUserPrimaryAdmin();
         userNameEl.createEl("span", {
-          text: isPrimary ? " (Primary Admin)" : " (Secondary Admin)",
+          text: isPrimary ? " (Primary admin)" : " (Secondary admin)",
           cls: isPrimary ? "collab-admin-badge collab-primary-admin" : "collab-admin-badge"
         });
       }
@@ -7516,7 +7578,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
       });
     } else {
       const registerBtn = containerEl.createEl("button", {
-        text: "Register Now",
+        text: "Register now",
         cls: "mod-cta"
       });
       registerBtn.addEventListener("click", () => {
@@ -7527,7 +7589,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
         ).open();
       });
     }
-    containerEl.createEl("h3", { text: "Real-Time Monitoring" });
+    new import_obsidian5.Setting(containerEl).setName("Real-time monitoring").setHeading();
     new import_obsidian5.Setting(containerEl).setName("Enable file watcher").setDesc("Monitor for changes in real-time (checks every 3 seconds)").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.enableFileWatcher).onChange(async (value) => {
         this.plugin.settings.enableFileWatcher = value;
@@ -7535,7 +7597,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
         this.plugin.restartFileWatcher();
       })
     );
-    containerEl.createEl("h3", { text: "Notifications" });
+    new import_obsidian5.Setting(containerEl).setName("Notifications").setHeading();
     new import_obsidian5.Setting(containerEl).setName("Enable notifications").setDesc("Show notifications for new mentions when opening the vault").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.enableNotifications).onChange(async (value) => {
         this.plugin.settings.enableNotifications = value;
@@ -7548,7 +7610,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "Auto-Cleanup" });
+    new import_obsidian5.Setting(containerEl).setName("Auto-cleanup").setHeading();
     new import_obsidian5.Setting(containerEl).setName("Enable auto-cleanup").setDesc("Automatically limit mentions per user to prevent file bloat").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.autoCleanup).onChange(async (value) => {
         this.plugin.settings.autoCleanup = value;
@@ -7567,7 +7629,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "Appearance" });
+    new import_obsidian5.Setting(containerEl).setName("Appearance").setHeading();
     new import_obsidian5.Setting(containerEl).setName("Highlight mentions").setDesc("Visually highlight @mentions in the editor").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.showMentionHighlights).onChange(async (value) => {
         this.plugin.settings.showMentionHighlights = value;
@@ -7580,7 +7642,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "Maintenance" });
+    new import_obsidian5.Setting(containerEl).setName("Maintenance").setHeading();
     let cleanupScope = "my-received";
     let cleanupDays = 30;
     new import_obsidian5.Setting(containerEl).setName("Cleanup scope").setDesc("Choose which mentions to clean up" + (isAdmin ? "" : " (Admin-only options hidden)")).addDropdown((dropdown) => {
@@ -7617,7 +7679,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
     );
     if (isAdmin) {
       new import_obsidian5.Setting(containerEl).setName("Force auto-cleanup now").setDesc("[Admin] Run auto-cleanup immediately (keeps last N per user for everyone)").addButton(
-        (btn) => btn.setButtonText("Run Auto-Cleanup").onClick(async () => {
+        (btn) => btn.setButtonText("Run auto-cleanup").onClick(async () => {
           const removed = await this.plugin.mentionParser.autoCleanupMentions(
             this.plugin.settings.maxMentionsPerUser,
             0

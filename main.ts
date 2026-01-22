@@ -14,7 +14,7 @@ import {
     Notice
 } from 'obsidian';
 
-import { CollabMentionsSettings, DEFAULT_SETTINGS, VaultUser, Reminder } from './src/types';
+import { CollabMentionsSettings, DEFAULT_SETTINGS, VaultUser, Reminder, ChatMessage } from './src/types';
 import { UserManager } from './src/userManager';
 import { MentionParser } from './src/mentionParser';
 import { ChatManager } from './src/chatManager';
@@ -49,7 +49,7 @@ export default class CollabMentionsPlugin extends Plugin {
     private lastCleanupTime: number = 0;  // Track last cleanup time
 
     async onload(): Promise<void> {
-        console.log('Loading Collab Mentions plugin');
+        console.debug('Loading Collab Mentions plugin');
 
         await this.loadSettings();
         // Ensure settings file exists (creates data.json if missing)
@@ -106,8 +106,7 @@ export default class CollabMentionsPlugin extends Plugin {
 
         // Add badge element to ribbon icon
         this.ribbonIconEl.addClass('collab-ribbon-icon');
-        const badgeEl = this.ribbonIconEl.createEl('span', { cls: 'collab-ribbon-badge' });
-        badgeEl.style.display = 'none';
+        const badgeEl = this.ribbonIconEl.createEl('span', { cls: 'collab-ribbon-badge collab-hidden' });
 
         // Add commands
         this.addCommand({
@@ -171,12 +170,12 @@ export default class CollabMentionsPlugin extends Plugin {
         let followUpTimer: number | null = null;
 
         const processFileForMentions = async (file: TFile): Promise<void> => {
-            console.log('[Collab-Mentions] Processing file for mentions:', file.path);
+            console.debug('[Collab-Mentions] Processing file for mentions:', file.path);
             if (this.userManager.isRegistered()) {
                 const newMentions = await this.mentionParser.processFile(file);
-                console.log('[Collab-Mentions] New mentions found:', newMentions.length);
+                console.debug('[Collab-Mentions] New mentions found:', newMentions.length);
                 for (const mention of newMentions) {
-                    console.log('[Collab-Mentions] Notifying mention to:', mention.to);
+                    console.debug('[Collab-Mentions] Notifying mention to:', mention.to);
                     this.notifier.notifyNewMention(mention);
                 }
             }
@@ -185,7 +184,7 @@ export default class CollabMentionsPlugin extends Plugin {
         // Debounced immediate processing (leading edge for responsiveness)
         const debouncedProcessFile = debounce(
             async (file: TFile) => {
-                console.log('[Collab-Mentions] File modified (immediate):', file.path);
+                console.debug('[Collab-Mentions] File modified (immediate):', file.path);
                 await processFileForMentions(file);
             },
             1000,
@@ -210,7 +209,7 @@ export default class CollabMentionsPlugin extends Plugin {
                     // This catches any mentions added during the debounce period
                     followUpTimer = window.setTimeout(async () => {
                         if (pendingFiles.size > 0) {
-                            console.log('[Collab-Mentions] Follow-up processing', pendingFiles.size, 'files');
+                            console.debug('[Collab-Mentions] Follow-up processing', pendingFiles.size, 'files');
                             for (const [path, pendingFile] of pendingFiles) {
                                 await processFileForMentions(pendingFile);
                             }
@@ -311,7 +310,7 @@ export default class CollabMentionsPlugin extends Plugin {
                 // Check for missed/due reminders - show individual modals
                 const dueReminders = await this.reminderManager.checkDueReminders();
                 if (dueReminders.length > 0) {
-                    console.log('[Collab-Mentions] Due reminders on startup:', dueReminders.length);
+                    console.debug('[Collab-Mentions] Due reminders on startup:', dueReminders.length);
                     // Track and show each reminder - the callback already fired in checkDueReminders
                     // but we need to track them to prevent duplicate notifications
                     for (const reminder of dueReminders) {
@@ -357,7 +356,7 @@ export default class CollabMentionsPlugin extends Plugin {
     }
 
     async onunload(): Promise<void> {
-        console.log('Unloading Collab Mentions plugin');
+        console.debug('Unloading Collab Mentions plugin');
         this.stopFileWatcher();
         this.stopHeartbeat();
         this.stopCleanupInterval();
@@ -370,7 +369,7 @@ export default class CollabMentionsPlugin extends Plugin {
      * Called after a user successfully registers - starts file watcher and heartbeat
      */
     private onUserRegistered(): void {
-        console.log('[Collab-Mentions] User registered, starting services...');
+        console.debug('[Collab-Mentions] User registered, starting services...');
 
         // Start file watcher if enabled
         if (this.settings.enableFileWatcher) {
@@ -394,11 +393,11 @@ export default class CollabMentionsPlugin extends Plugin {
      * Show notification for a due reminder with centered modal
      */
     private showReminderNotification(reminder: Reminder): void {
-        console.log('[Collab-Mentions] showReminderNotification called for:', reminder.message.substring(0, 30), 'id:', reminder.id);
+        console.debug('[Collab-Mentions] showReminderNotification called for:', reminder.message.substring(0, 30), 'id:', reminder.id);
 
         // Check if we've already notified for this reminder in this session
         if (this.notifiedReminderIds.has(reminder.id)) {
-            console.log('[Collab-Mentions] Skipping duplicate notification for reminder:', reminder.id);
+            console.debug('[Collab-Mentions] Skipping duplicate notification for reminder:', reminder.id);
             return;
         }
 
@@ -413,7 +412,7 @@ export default class CollabMentionsPlugin extends Plugin {
             () => this.refreshPanel()
         );
 
-        console.log('[Collab-Mentions] Opening ReminderNotificationModal for:', reminder.id);
+        console.debug('[Collab-Mentions] Opening ReminderNotificationModal for:', reminder.id);
         modal.open();
     }
 
@@ -529,9 +528,11 @@ export default class CollabMentionsPlugin extends Plugin {
 
         if (totalUnread > 0) {
             badgeEl.textContent = totalUnread > 99 ? '99+' : String(totalUnread);
-            badgeEl.style.display = 'flex';
+            badgeEl.removeClass('collab-hidden');
+            badgeEl.addClass('collab-visible');
         } else {
-            badgeEl.style.display = 'none';
+            badgeEl.removeClass('collab-visible');
+            badgeEl.addClass('collab-hidden');
         }
     }
 
@@ -575,7 +576,7 @@ export default class CollabMentionsPlugin extends Plugin {
 
         // Check if file changed
         if (currentHash && currentHash !== this.lastMentionsFileHash) {
-            console.log('Mentions file changed, reloading...');
+            console.debug('Mentions file changed, reloading...');
 
             // Reload mentions
             await this.mentionParser.loadMentions();
@@ -583,25 +584,25 @@ export default class CollabMentionsPlugin extends Plugin {
             // Check for NEW unread mentions (not already notified)
             // Use BOTH ID tracking AND content hash tracking for maximum robustness
             const unread = this.mentionParser.getUnreadMentions();
-            console.log('[Collab-Mentions] Total unread mentions for current user:', unread.length);
+            console.debug('[Collab-Mentions] Total unread mentions for current user:', unread.length);
 
             const newUnread: typeof unread = [];
 
             for (const mention of unread) {
                 // Skip if already notified by ID
                 if (this.notifiedMentionIds.has(mention.id)) {
-                    console.log('[Collab-Mentions] Skipping mention (already notified by ID):', mention.id, 'from:', mention.from);
+                    console.debug('[Collab-Mentions] Skipping mention (already notified by ID):', mention.id, 'from:', mention.from);
                     continue;
                 }
 
                 // Also check by content hash (catches edge cases where IDs might differ)
                 const contentHash = this.mentionParser.getMentionContentHash(mention);
                 if (this.notifiedContentHashes.has(contentHash)) {
-                    console.log('[Collab-Mentions] Skipping mention (already notified by hash):', mention.id, 'from:', mention.from);
+                    console.debug('[Collab-Mentions] Skipping mention (already notified by hash):', mention.id, 'from:', mention.from);
                     continue;
                 }
 
-                console.log('[Collab-Mentions] NEW mention to notify:', mention.id, 'from:', mention.from, 'context:', mention.context.substring(0, 50));
+                console.debug('[Collab-Mentions] NEW mention to notify:', mention.id, 'from:', mention.from, 'context:', mention.context.substring(0, 50));
                 newUnread.push(mention);
                 // Track by both ID and hash
                 this.notifiedMentionIds.add(mention.id);
@@ -609,7 +610,7 @@ export default class CollabMentionsPlugin extends Plugin {
             }
 
             if (newUnread.length > 0 && this.settings.enableNotifications) {
-                console.log('[Collab-Mentions] New unread mentions to notify:', newUnread.length);
+                console.debug('[Collab-Mentions] New unread mentions to notify:', newUnread.length);
 
                 // Batch notifications when there are many to prevent notification storm
                 if (newUnread.length > 3) {
@@ -621,7 +622,7 @@ export default class CollabMentionsPlugin extends Plugin {
                     this.showCenteredNotification(
                         '📣 New Mentions',
                         `You have ${newUnread.length} new mentions ${senderText}`,
-                        () => this.activateMentionPanel({ tab: 'inbox' })
+                        () => { void this.activateMentionPanel({ tab: 'inbox' }); }
                     );
                 } else {
                     // Show individual notifications for small batches (1-3)
@@ -629,7 +630,7 @@ export default class CollabMentionsPlugin extends Plugin {
                         this.showCenteredNotification(
                             '📣 New Mention',
                             `@${mention.from} mentioned you: "${this.truncateText(mention.context, 50)}"`,
-                            () => this.activateMentionPanel({ tab: 'inbox' })
+                            () => { void this.activateMentionPanel({ tab: 'inbox' }); }
                         );
                     }
                 }
@@ -679,7 +680,7 @@ export default class CollabMentionsPlugin extends Plugin {
 
         // Check if file changed
         if (currentHash && currentHash !== this.lastChatFileHash) {
-            console.log('Chat file changed, reloading...');
+            console.debug('Chat file changed, reloading...');
 
             // Reload chat
             await this.chatManager.loadChat();
@@ -692,7 +693,7 @@ export default class CollabMentionsPlugin extends Plugin {
                 // Remove channels from known list that user is no longer in (they left)
                 for (const knownId of this.knownChannelIds) {
                     if (!currentChannelIds.has(knownId)) {
-                        console.log('[Collab-Mentions] User left channel, removing from known:', knownId);
+                        console.debug('[Collab-Mentions] User left channel, removing from known:', knownId);
                         this.knownChannelIds.delete(knownId);
                         this.lastKnownMessageIds.delete(knownId);
                     }
@@ -708,7 +709,7 @@ export default class CollabMentionsPlugin extends Plugin {
                         channel.members.includes(currentUser.vaultName);
 
                     if (!isActuallyMember) {
-                        console.log('[Collab-Mentions] Skipping channel notification - user not actually a member:',
+                        console.debug('[Collab-Mentions] Skipping channel notification - user not actually a member:',
                             channel.id, channel.name, 'members:', channel.members);
                         // Still add to known to prevent repeated checks
                         this.knownChannelIds.add(channel.id);
@@ -718,14 +719,14 @@ export default class CollabMentionsPlugin extends Plugin {
                     // Capture channel.id for closure
                     const channelId = channel.id;
                     // Show centered notification for new/restored channel
-                    console.log('[Collab-Mentions] User added to channel:', channel.id, channel.name,
+                    console.debug('[Collab-Mentions] User added to channel:', channel.id, channel.name,
                         'members:', channel.members);
                     this.showCenteredNotification(
                         '💬 New Channel',
                         `You were added to "${channel.name || 'a conversation'}"`,
                         () => {
                             // Switch to the new channel when clicked
-                            this.activateMentionPanel({ channelId });
+                            void this.activateMentionPanel({ channelId });
                         }
                     );
                     this.knownChannelIds.add(channel.id);
@@ -740,7 +741,7 @@ export default class CollabMentionsPlugin extends Plugin {
                 }
 
                 // Check for NEW messages in existing channels (by message ID AND content hash)
-                let newMessagesFromOthers: Array<{ channelId: string; channelName: string; message: any; contentHash: string }> = [];
+                const newMessagesFromOthers: Array<{ channelId: string; channelName: string; message: ChatMessage; contentHash: string }> = [];
 
                 for (const channel of currentChannels) {
                     if (!this.knownChannelIds.has(channel.id)) continue; // Skip newly added channels
@@ -774,7 +775,7 @@ export default class CollabMentionsPlugin extends Plugin {
 
                 // Notify about new messages (batch if many)
                 if (newMessagesFromOthers.length > 0) {
-                    console.log('[Collab-Mentions] New messages from others:', newMessagesFromOthers.length,
+                    console.debug('[Collab-Mentions] New messages from others:', newMessagesFromOthers.length,
                         newMessagesFromOthers.map(m => ({
                             id: m.message.id,
                             from: m.message.from,
@@ -806,7 +807,7 @@ export default class CollabMentionsPlugin extends Plugin {
                         this.showCenteredNotification(
                             '💬 New Messages',
                             `${newMessagesFromOthers.length} new messages ${senderText} ${channelText}`,
-                            () => this.activateMentionPanel({ channelId: firstChannelId })
+                            () => { void this.activateMentionPanel({ channelId: firstChannelId }); }
                         );
                     } else {
                         // Show individual notifications for small batches (1-5)
@@ -831,7 +832,7 @@ export default class CollabMentionsPlugin extends Plugin {
                             this.showCenteredNotification(
                                 '💬 New Message',
                                 notificationText,
-                                () => this.activateMentionPanel({ channelId })
+                                () => { void this.activateMentionPanel({ channelId }); }
                             );
                         }
                     }
@@ -874,7 +875,7 @@ export default class CollabMentionsPlugin extends Plugin {
 
         // Check if file changed
         if (currentHash && currentHash !== this.lastUsersFileHash) {
-            console.log('Users file changed, reloading...');
+            console.debug('Users file changed, reloading...');
 
             // Reload users
             await this.userManager.loadUsers();
@@ -909,7 +910,7 @@ export default class CollabMentionsPlugin extends Plugin {
 
         // Check if file changed
         if (currentHash && currentHash !== this.lastRemindersFileHash) {
-            console.log('[Collab-Mentions] Reminders file changed, reloading...');
+            console.debug('[Collab-Mentions] Reminders file changed, reloading...');
 
             // Reload reminders from disk
             await this.reminderManager.loadReminders();
@@ -921,7 +922,7 @@ export default class CollabMentionsPlugin extends Plugin {
             for (const reminder of dueReminders) {
                 if (!this.notifiedReminderIds.has(reminder.id)) {
                     this.notifiedReminderIds.add(reminder.id);
-                    console.log('[Collab-Mentions] Notified for reminder:', reminder.id, reminder.message.substring(0, 30));
+                    console.debug('[Collab-Mentions] Notified for reminder:', reminder.id, reminder.message.substring(0, 30));
                 }
             }
 
@@ -938,7 +939,7 @@ export default class CollabMentionsPlugin extends Plugin {
     private activeNotifications: HTMLElement[] = [];
 
     private showCenteredNotification(title: string, message: string, onClick?: () => void): void {
-        console.log('[Collab-Mentions] showCenteredNotification called:', title, message);
+        console.debug('[Collab-Mentions] showCenteredNotification called:', title, message);
 
         // Create notification container (not full overlay - allows stacking)
         const notification = document.createElement('div');
@@ -947,7 +948,7 @@ export default class CollabMentionsPlugin extends Plugin {
         // Calculate position based on existing notifications
         const existingCount = this.activeNotifications.length;
         const topOffset = 20 + (existingCount * 90); // Stack vertically
-        notification.style.top = `${topOffset}px`;
+        notification.setCssProps({ '--notification-top': `${topOffset}px` });
 
         const titleEl = document.createElement('h3');
         titleEl.textContent = title;
@@ -1001,7 +1002,7 @@ export default class CollabMentionsPlugin extends Plugin {
         }
         // Reposition remaining notifications
         this.activeNotifications.forEach((n, i) => {
-            n.style.top = `${20 + (i * 90)}px`;
+            n.setCssProps({ '--notification-top': `${20 + (i * 90)}px` });
         });
     }
 
@@ -1015,7 +1016,7 @@ export default class CollabMentionsPlugin extends Plugin {
             return; // Already running
         }
 
-        console.log('Starting mentions file watcher...');
+        console.debug('Starting mentions file watcher...');
 
         // Check every 3 seconds for real-time updates
         this.fileWatcherInterval = window.setInterval(async () => {
@@ -1030,19 +1031,19 @@ export default class CollabMentionsPlugin extends Plugin {
         // Initial hashes - initialize ALL file hashes
         this.getMentionsFileHash().then(hash => {
             this.lastMentionsFileHash = hash;
-            console.log('[Collab-Mentions] Initialized mentions hash');
+            console.debug('[Collab-Mentions] Initialized mentions hash');
         });
         this.getChatFileHash().then(hash => {
             this.lastChatFileHash = hash;
-            console.log('[Collab-Mentions] Initialized chat hash');
+            console.debug('[Collab-Mentions] Initialized chat hash');
         });
         this.getUsersFileHash().then(hash => {
             this.lastUsersFileHash = hash;
-            console.log('[Collab-Mentions] Initialized users hash');
+            console.debug('[Collab-Mentions] Initialized users hash');
         });
         this.getRemindersFileHash().then(hash => {
             this.lastRemindersFileHash = hash;
-            console.log('[Collab-Mentions] Initialized reminders hash');
+            console.debug('[Collab-Mentions] Initialized reminders hash');
         });
 
         // Initialize notified mention IDs, content hashes, and known channel IDs
@@ -1053,7 +1054,7 @@ export default class CollabMentionsPlugin extends Plugin {
             const contentHash = this.mentionParser.getMentionContentHash(m);
             this.notifiedContentHashes.add(contentHash);
         });
-        console.log('[Collab-Mentions] Initialized mention tracking:', unread.length, 'mentions');
+        console.debug('[Collab-Mentions] Initialized mention tracking:', unread.length, 'mentions');
 
         const currentUser = this.userManager.getCurrentUser();
         if (currentUser) {
@@ -1074,7 +1075,7 @@ export default class CollabMentionsPlugin extends Plugin {
                     }
                 }
             }
-            console.log('[Collab-Mentions] Initialized channel tracking:', channels.length, 'channels');
+            console.debug('[Collab-Mentions] Initialized channel tracking:', channels.length, 'channels');
 
             // Initialize notified reminder IDs (reminders that have already notified this user)
             const reminders = this.reminderManager.getReminders();
@@ -1089,7 +1090,7 @@ export default class CollabMentionsPlugin extends Plugin {
                     this.notifiedReminderIds.add(reminder.id);
                 }
             }
-            console.log('[Collab-Mentions] Initialized reminder tracking:', this.notifiedReminderIds.size, 'notified reminders');
+            console.debug('[Collab-Mentions] Initialized reminder tracking:', this.notifiedReminderIds.size, 'notified reminders');
         }
 
         // Start cleanup interval to prevent memory leaks
@@ -1098,7 +1099,7 @@ export default class CollabMentionsPlugin extends Plugin {
 
     stopFileWatcher(): void {
         if (this.fileWatcherInterval !== null) {
-            console.log('Stopping mentions file watcher...');
+            console.debug('Stopping mentions file watcher...');
             window.clearInterval(this.fileWatcherInterval);
             this.fileWatcherInterval = null;
         }
@@ -1120,7 +1121,7 @@ export default class CollabMentionsPlugin extends Plugin {
             return; // Already running
         }
 
-        console.log('[Collab-Mentions] Starting periodic cleanup interval...');
+        console.debug('[Collab-Mentions] Starting periodic cleanup interval...');
 
         // Run cleanup every 30 minutes
         this.cleanupInterval = window.setInterval(() => {
@@ -1136,7 +1137,7 @@ export default class CollabMentionsPlugin extends Plugin {
      */
     stopCleanupInterval(): void {
         if (this.cleanupInterval !== null) {
-            console.log('[Collab-Mentions] Stopping cleanup interval...');
+            console.debug('[Collab-Mentions] Stopping cleanup interval...');
             window.clearInterval(this.cleanupInterval);
             this.cleanupInterval = null;
         }
@@ -1228,7 +1229,7 @@ export default class CollabMentionsPlugin extends Plugin {
             (startSize.channelIds - endSize.channelIds);
 
         if (cleaned > 0) {
-            console.log('[Collab-Mentions] Cleanup completed:', {
+            console.debug('[Collab-Mentions] Cleanup completed:', {
                 mentionIds: `${startSize.mentionIds} → ${endSize.mentionIds}`,
                 contentHashes: `${startSize.contentHashes} → ${endSize.contentHashes}`,
                 messageHashes: `${startSize.messageHashes} → ${endSize.messageHashes}`,
@@ -1250,7 +1251,7 @@ export default class CollabMentionsPlugin extends Plugin {
             return; // Already running
         }
 
-        console.log('Starting presence heartbeat...');
+        console.debug('Starting presence heartbeat...');
 
         // Get current active file
         const getActiveFile = (): string | undefined => {
@@ -1288,7 +1289,7 @@ export default class CollabMentionsPlugin extends Plugin {
                             this.showCenteredNotification(
                                 '💬 Welcome Back!',
                                 `You have ${unreadCount} unread message${unreadCount > 1 ? 's' : ''} while you were away`,
-                                () => this.activateMentionPanel({ tab: 'chat' })
+                                () => { void this.activateMentionPanel({ tab: 'chat' }); }
                             );
                             this.lastUnreadNotificationTime = now;
                         }
@@ -1301,7 +1302,7 @@ export default class CollabMentionsPlugin extends Plugin {
 
     stopHeartbeat(): void {
         if (this.heartbeatInterval !== null) {
-            console.log('Stopping presence heartbeat...');
+            console.debug('Stopping presence heartbeat...');
             window.clearInterval(this.heartbeatInterval);
             this.heartbeatInterval = null;
         }
@@ -1440,7 +1441,7 @@ class MentionSuggest extends EditorSuggest<MentionSuggestion> {
             }
         } else {
             const colorDot = container.createEl('span', { cls: 'collab-user-dot' });
-            colorDot.style.backgroundColor = suggestion.color || '#7c3aed';
+            colorDot.setCssProps({ '--user-dot-color': suggestion.color || '#7c3aed' });
 
             container.createEl('span', {
                 text: `@${suggestion.vaultName}`,
@@ -1492,7 +1493,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
 
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'Collab Mentions Settings' });
+        new Setting(containerEl).setName('Collab Mentions settings').setHeading();
 
         // User info
         const currentUser = this.plugin.userManager.getCurrentUser();
@@ -1505,7 +1506,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
             if (isAdmin) {
                 const isPrimary = this.plugin.userManager.isCurrentUserPrimaryAdmin();
                 userNameEl.createEl('span', {
-                    text: isPrimary ? ' (Primary Admin)' : ' (Secondary Admin)',
+                    text: isPrimary ? ' (Primary admin)' : ' (Secondary admin)',
                     cls: isPrimary ? 'collab-admin-badge collab-primary-admin' : 'collab-admin-badge'
                 });
             }
@@ -1521,7 +1522,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
             });
         } else {
             const registerBtn = containerEl.createEl('button', {
-                text: 'Register Now',
+                text: 'Register now',
                 cls: 'mod-cta'
             });
             registerBtn.addEventListener('click', () => {
@@ -1533,7 +1534,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
             });
         }
 
-        containerEl.createEl('h3', { text: 'Real-Time Monitoring' });
+        new Setting(containerEl).setName('Real-time monitoring').setHeading();
 
         new Setting(containerEl)
             .setName('Enable file watcher')
@@ -1547,7 +1548,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
                 })
             );
 
-        containerEl.createEl('h3', { text: 'Notifications' });
+        new Setting(containerEl).setName('Notifications').setHeading();
 
         new Setting(containerEl)
             .setName('Enable notifications')
@@ -1571,7 +1572,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
                 })
             );
 
-        containerEl.createEl('h3', { text: 'Auto-Cleanup' });
+        new Setting(containerEl).setName('Auto-cleanup').setHeading();
 
         new Setting(containerEl)
             .setName('Enable auto-cleanup')
@@ -1610,7 +1611,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
                 })
             );
 
-        containerEl.createEl('h3', { text: 'Appearance' });
+        new Setting(containerEl).setName('Appearance').setHeading();
 
         new Setting(containerEl)
             .setName('Highlight mentions')
@@ -1635,7 +1636,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
                 })
             );
 
-        containerEl.createEl('h3', { text: 'Maintenance' });
+        new Setting(containerEl).setName('Maintenance').setHeading();
 
         // Cleanup scope selector
         let cleanupScope: 'my-received' | 'my-sent' | 'all' = 'my-received';
@@ -1704,7 +1705,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
                 .setName('Force auto-cleanup now')
                 .setDesc('[Admin] Run auto-cleanup immediately (keeps last N per user for everyone)')
                 .addButton(btn => btn
-                    .setButtonText('Run Auto-Cleanup')
+                    .setButtonText('Run auto-cleanup')
                     .onClick(async () => {
                         const removed = await this.plugin.mentionParser.autoCleanupMentions(
                             this.plugin.settings.maxMentionsPerUser,

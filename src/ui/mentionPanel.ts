@@ -63,7 +63,7 @@ export class MentionPanelView extends ItemView {
      */
     switchToTab(tab: 'inbox' | 'sent' | 'team' | 'chat' | 'reminders'): void {
         this.activeTab = tab;
-        this.render();
+        void this.render();
     }
 
     /**
@@ -72,7 +72,7 @@ export class MentionPanelView extends ItemView {
     switchToChannel(channelId: string): void {
         this.chatManager.setActiveChannel(channelId);
         this.activeTab = 'chat';
-        this.render();
+        void this.render();
     }
 
     async render(): Promise<void> {
@@ -139,12 +139,12 @@ export class MentionPanelView extends ItemView {
         // Tab switching
         inboxTab.addEventListener('click', () => {
             setActiveTab(inboxTab, 'inbox');
-            this.renderInbox(contentEl);
+            void this.renderInbox(contentEl);
         });
 
         sentTab.addEventListener('click', () => {
             setActiveTab(sentTab, 'sent');
-            this.renderSent(contentEl);
+            void this.renderSent(contentEl);
         });
 
         teamTab.addEventListener('click', async () => {
@@ -166,24 +166,24 @@ export class MentionPanelView extends ItemView {
         switch (this.activeTab) {
             case 'sent':
                 setActiveTab(sentTab, 'sent');
-                this.renderSent(contentEl);
+                void this.renderSent(contentEl);
                 break;
             case 'team':
                 setActiveTab(teamTab, 'team');
-                this.renderTeam(contentEl);
+                void this.renderTeam(contentEl);
                 break;
             case 'chat':
                 setActiveTab(chatTab, 'chat');
-                this.renderChat(contentEl);
+                void this.renderChat(contentEl);
                 break;
             case 'reminders':
                 setActiveTab(remindersTab, 'reminders');
-                this.renderReminders(contentEl);
+                void this.renderReminders(contentEl);
                 break;
             case 'inbox':
             default:
                 setActiveTab(inboxTab, 'inbox');
-                this.renderInbox(contentEl);
+                void this.renderInbox(contentEl);
                 break;
         }
     }
@@ -211,7 +211,7 @@ export class MentionPanelView extends ItemView {
         filterSelect.value = this.inboxFilter;
         filterSelect.addEventListener('change', () => {
             this.inboxFilter = filterSelect.value as 'all' | 'unread' | 'read';
-            this.renderInbox(container);
+            void this.renderInbox(container);
         });
 
         // Right side buttons
@@ -225,7 +225,7 @@ export class MentionPanelView extends ItemView {
         });
         refreshBtn.addEventListener('click', async () => {
             await this.mentionParser.loadMentions();
-            this.renderInbox(container);
+            await this.renderInbox(container);
             new Notice('Inbox refreshed');
         });
 
@@ -237,7 +237,7 @@ export class MentionPanelView extends ItemView {
             });
             markAllBtn.addEventListener('click', async () => {
                 await this.mentionParser.markAllAsRead();
-                this.renderInbox(container);
+                await this.renderInbox(container);
             });
         }
 
@@ -279,7 +279,7 @@ export class MentionPanelView extends ItemView {
 
         // Header with refresh
         const headerRow = container.createEl('div', { cls: 'collab-inbox-header' });
-        headerRow.createEl('span', { text: 'Sent Mentions', cls: 'collab-inbox-title' });
+        headerRow.createEl('span', { text: 'Sent mentions', cls: 'collab-inbox-title' });
 
         const refreshBtn = headerRow.createEl('button', {
             text: '🔄',
@@ -288,7 +288,7 @@ export class MentionPanelView extends ItemView {
         });
         refreshBtn.addEventListener('click', async () => {
             await this.mentionParser.loadMentions();
-            this.renderSent(container);
+            await this.renderSent(container);
             new Notice('Sent refreshed');
         });
 
@@ -313,7 +313,7 @@ export class MentionPanelView extends ItemView {
 
         // Header with refresh
         const headerRow = container.createEl('div', { cls: 'collab-inbox-header' });
-        headerRow.createEl('span', { text: 'Team Members', cls: 'collab-inbox-title' });
+        headerRow.createEl('span', { text: 'Team members', cls: 'collab-inbox-title' });
 
         const refreshBtn = headerRow.createEl('button', {
             text: '🔄',
@@ -323,7 +323,7 @@ export class MentionPanelView extends ItemView {
         refreshBtn.addEventListener('click', async () => {
             await this.userManager.loadPresence();
             await this.userManager.loadUsers();
-            this.renderTeam(container);
+            await this.renderTeam(container);
             new Notice('Team refreshed');
         });
 
@@ -338,7 +338,7 @@ export class MentionPanelView extends ItemView {
             const statusSection = container.createEl('div', { cls: 'collab-status-selector-section' });
 
             const statusLabel = statusSection.createEl('span', {
-                text: 'Your Status:',
+                text: 'Your status:',
                 cls: 'collab-status-selector-label'
             });
 
@@ -365,7 +365,7 @@ export class MentionPanelView extends ItemView {
 
             statusSelect.addEventListener('change', async () => {
                 await this.userManager.setManualStatus(statusSelect.value as ManualStatus);
-                this.renderTeam(container);
+                await this.renderTeam(container);
             });
         }
 
@@ -553,7 +553,7 @@ export class MentionPanelView extends ItemView {
                 cls: 'collab-reminder-action-btn',
                 attr: { title: 'Snooze' }
             });
-            snoozeBtn.innerHTML = '⏰';
+            snoozeBtn.setText('⏰');
             snoozeBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 new SnoozeModal(this.app, this.reminderManager, reminder.id, onUpdate).open();
@@ -564,7 +564,7 @@ export class MentionPanelView extends ItemView {
                 cls: 'collab-reminder-action-btn',
                 attr: { title: 'Edit' }
             });
-            editBtn.innerHTML = '✏️';
+            editBtn.setText('✏️');
             editBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 new EditReminderModal(this.app, this.reminderManager, reminder, onUpdate).open();
@@ -576,7 +576,7 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-reminder-action-btn',
             attr: { title: 'Delete' }
         });
-        deleteBtn.innerHTML = '🗑️';
+        deleteBtn.setText('🗑️');
         deleteBtn.addEventListener('click', async (e: MouseEvent) => {
             e.stopPropagation();
             await this.reminderManager.deleteReminder(reminder.id);
@@ -613,7 +613,7 @@ export class MentionPanelView extends ItemView {
             nameEl.createEl('span', {
                 text: userInfo.adminLevel === 'primary' ? ' 👑' : ' ⭐',
                 cls: 'collab-admin-indicator',
-                attr: { title: userInfo.adminLevel === 'primary' ? 'Primary Admin' : 'Admin' }
+                attr: { title: userInfo.adminLevel === 'primary' ? 'Primary admin' : 'Admin' }
             });
         }
 
@@ -637,18 +637,22 @@ export class MentionPanelView extends ItemView {
                 attr: { title: `Remove @${user.vaultName} from team` }
             });
 
-            removeBtn.addEventListener('click', async (e) => {
+            removeBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const confirmed = confirm(`Are you sure you want to remove @${user.vaultName} from the team?`);
-                if (confirmed) {
-                    await this.userManager.removeUser(user.vaultName);
-                    // Re-render the team tab
-                    const teamContainer = container.parentElement;
-                    if (teamContainer) {
-                        await this.renderTeam(teamContainer);
+                new ConfirmActionModal(
+                    this.app,
+                    'Remove team member?',
+                    `Are you sure you want to remove @${user.vaultName} from the team?`,
+                    async () => {
+                        await this.userManager.removeUser(user.vaultName);
+                        // Re-render the team tab
+                        const teamContainer = container.parentElement;
+                        if (teamContainer) {
+                            await this.renderTeam(teamContainer);
+                        }
+                        new Notice(`@${user.vaultName} has been removed from the team`);
                     }
-                    new Notice(`@${user.vaultName} has been removed from the team`);
-                }
+                ).open();
             });
         }
     }
@@ -878,7 +882,7 @@ export class MentionPanelView extends ItemView {
                 this.chatSearchQuery = '';
                 this.chatSearchResults = [];
                 if (this.chatContainer) {
-                    this.renderChat(this.chatContainer);
+                    void this.renderChat(this.chatContainer);
                 }
             });
         }
@@ -1053,7 +1057,7 @@ export class MentionPanelView extends ItemView {
                         this.chatSearchQuery = '';
                         this.chatSearchResults = [];
                         if (this.chatContainer) {
-                            this.renderChat(this.chatContainer);
+                            void this.renderChat(this.chatContainer);
                         }
                     });
                     lastChannelId = msg.channelId;
@@ -1078,7 +1082,7 @@ export class MentionPanelView extends ItemView {
                         this.chatSearchQuery = '';
                         this.chatSearchResults = [];
                         if (this.chatContainer) {
-                            this.renderChat(this.chatContainer);
+                            void this.renderChat(this.chatContainer);
                         }
                     });
                 }
@@ -1117,20 +1121,21 @@ export class MentionPanelView extends ItemView {
 
         // Jump to bottom button (hidden by default, shown when scrolled up)
         const jumpBtn = messagesWrapper.createEl('button', {
-            cls: 'collab-jump-to-bottom',
+            cls: 'collab-jump-to-bottom collab-hidden',
             text: '↓ Jump to latest'
         });
-        jumpBtn.style.display = 'none';
 
         // Show/hide jump button based on scroll position
         messagesEl.addEventListener('scroll', () => {
             const isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
-            jumpBtn.style.display = isNearBottom ? 'none' : 'flex';
+            jumpBtn.toggleClass('collab-hidden', isNearBottom);
+            jumpBtn.toggleClass('collab-visible', !isNearBottom);
         });
 
         jumpBtn.addEventListener('click', () => {
             messagesEl.scrollTop = messagesEl.scrollHeight;
-            jumpBtn.style.display = 'none';
+            jumpBtn.addClass('collab-hidden');
+            jumpBtn.removeClass('collab-visible');
         });
 
         // Scroll to bottom initially
@@ -1151,8 +1156,7 @@ export class MentionPanelView extends ItemView {
 
     private renderMessageInput(container: HTMLElement, imagePreviewArea: HTMLElement): void {
         // Typing indicator
-        const typingIndicator = container.createEl('div', { cls: 'collab-typing-indicator' });
-        typingIndicator.style.display = 'none';
+        const typingIndicator = container.createEl('div', { cls: 'collab-typing-indicator collab-hidden' });
         this.typingIndicatorEl = typingIndicator;
         this.updateTypingIndicator();
 
@@ -1215,7 +1219,7 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-chat-btn',
             attr: { title: 'Insert file link [[filename]]' }
         });
-        fileLinkBtn.innerHTML = '📄';
+        fileLinkBtn.setText('📄');
         fileLinkBtn.addEventListener('click', () => {
             new FileLinkModal(this.app, (filePath) => {
                 const linkText = `[[${filePath}]]`;
@@ -1233,7 +1237,7 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-chat-btn',
             attr: { title: 'Attach image (or paste from clipboard)' }
         });
-        imageBtn.innerHTML = '🖼️';
+        imageBtn.setText('🖼️');
 
         const imageInput = leftButtons.createEl('input', {
             attr: { type: 'file', accept: 'image/*', style: 'display: none' }
@@ -1257,7 +1261,7 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-chat-btn',
             attr: { title: 'Mention someone @name' }
         });
-        mentionBtn.innerHTML = '@';
+        mentionBtn.setText('@');
         mentionBtn.addEventListener('click', () => {
             new UserMentionModal(this.app, this.userManager, (username) => {
                 const mentionText = `@${username} `;
@@ -1342,11 +1346,13 @@ export class MentionPanelView extends ItemView {
         const typingUsers = this.userManager.getTypingUsers(activeChannelId);
 
         if (typingUsers.length === 0) {
-            this.typingIndicatorEl.style.display = 'none';
+            this.typingIndicatorEl.addClass('collab-hidden');
+            this.typingIndicatorEl.removeClass('collab-visible');
             return;
         }
 
-        this.typingIndicatorEl.style.display = 'flex';
+        this.typingIndicatorEl.removeClass('collab-hidden');
+        this.typingIndicatorEl.addClass('collab-visible');
 
         let text: string;
         if (typingUsers.length === 1) {
@@ -1357,7 +1363,9 @@ export class MentionPanelView extends ItemView {
             text = `${typingUsers.length} people are typing...`;
         }
 
-        this.typingIndicatorEl.innerHTML = `<span class="collab-typing-dots">•••</span> ${text}`;
+        this.typingIndicatorEl.empty();
+        this.typingIndicatorEl.createEl('span', { text: '•••', cls: 'collab-typing-dots' });
+        this.typingIndicatorEl.appendText(' ' + text);
     }
 
     private showNewChannelModal(): void {
@@ -1381,11 +1389,13 @@ export class MentionPanelView extends ItemView {
         container.empty();
 
         if (this.pendingImages.length === 0) {
-            container.style.display = 'none';
+            container.addClass('collab-hidden');
+            container.removeClass('collab-visible');
             return;
         }
 
-        container.style.display = 'flex';
+        container.removeClass('collab-hidden');
+        container.addClass('collab-visible');
 
         for (const img of this.pendingImages) {
             const previewItem = container.createEl('div', { cls: 'collab-image-preview-item' });
@@ -1434,7 +1444,7 @@ export class MentionPanelView extends ItemView {
             const contentEl = msgEl.createEl('span', { cls: 'collab-system-msg-content' });
 
             // Parse and render file links as clickable
-            let messageText = msg.message;
+            const messageText = msg.message;
             const fileLinkRegex = /\[\[([^\]]+)\]\]/g;
             let lastIndex = 0;
             let match;
@@ -1594,7 +1604,7 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-chat-action-btn',
             attr: { title: 'Reply' }
         });
-        replyBtn.innerHTML = '↩️';
+        replyBtn.setText('↩️');
         replyBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.replyingTo = msg;
@@ -1609,7 +1619,7 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-chat-action-btn',
             attr: { title: 'Add reaction' }
         });
-        addReactionBtn.innerHTML = '😊';
+        addReactionBtn.setText('😊');
         addReactionBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.showReactionPicker(msg.id, addReactionBtn);
@@ -1621,7 +1631,7 @@ export class MentionPanelView extends ItemView {
                 cls: 'collab-chat-action-btn',
                 attr: { title: 'Edit message' }
             });
-            editBtn.innerHTML = '✏️';
+            editBtn.setText('✏️');
             editBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 new EditMessageModal(this.app, msg.message, async (newContent) => {
@@ -1636,7 +1646,7 @@ export class MentionPanelView extends ItemView {
                 cls: 'collab-chat-action-btn',
                 attr: { title: 'Delete message' }
             });
-            deleteBtn.innerHTML = '🗑️';
+            deleteBtn.setText('🗑️');
             deleteBtn.addEventListener('click', (e: MouseEvent) => {
                 e.stopPropagation();
                 new ConfirmDeleteModal(this.app, async () => {
@@ -1671,8 +1681,8 @@ export class MentionPanelView extends ItemView {
         }
 
         // Add to DOM first to measure dimensions
-        picker.style.position = 'fixed';
-        picker.style.visibility = 'hidden';
+        picker.addClass('collab-position-fixed');
+        picker.addClass('collab-visibility-hidden');
         document.body.appendChild(picker);
 
         // Get dimensions
@@ -1700,9 +1710,9 @@ export class MentionPanelView extends ItemView {
             left = 8;
         }
 
-        picker.style.left = `${left}px`;
-        picker.style.top = `${top}px`;
-        picker.style.visibility = 'visible';
+        picker.setCssProps({ '--picker-left': `${left}px`, '--picker-top': `${top}px` });
+        picker.removeClass('collab-visibility-hidden');
+        picker.addClass('collab-visibility-visible');
 
         // Close picker when clicking outside
         const closeHandler = (e: MouseEvent) => {
@@ -1717,7 +1727,7 @@ export class MentionPanelView extends ItemView {
     private renderMessageContent(container: HTMLElement, message: string, isOwn: boolean): void {
         // Combined regex to match [[file]], @#channel, @mention, and URLs
         // Order matters: @#channel must be checked before @mention
-        const combinedRegex = /(\[\[[^\]]+\]\])|(@#[\w-]+)|(@\w+)|(https?:\/\/[^\s<>\[\]]+)/g;
+        const combinedRegex = /(\[\[[^\]]+\]\])|(@#[\w-]+)|(@\w+)|(https?:\/\/[^\s<>[\]]+)/g;
 
         let lastIndex = 0;
         let match;
@@ -1809,12 +1819,21 @@ export class MentionPanelView extends ItemView {
     private openImageModal(imagePath: string): void {
         const modal = document.createElement('div');
         modal.className = 'collab-image-modal';
-        modal.innerHTML = `
-            <div class="collab-image-modal-content">
-                <img src="${this.app.vault.adapter.getResourcePath(imagePath)}" />
-                <button class="collab-image-modal-close">×</button>
-            </div>
-        `;
+
+        const content = document.createElement('div');
+        content.className = 'collab-image-modal-content';
+
+        const img = document.createElement('img');
+        img.src = this.app.vault.adapter.getResourcePath(imagePath);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'collab-image-modal-close';
+        closeBtn.textContent = '×';
+
+        content.appendChild(img);
+        content.appendChild(closeBtn);
+        modal.appendChild(content);
+
         modal.addEventListener('click', (e) => {
             if (e.target === modal || (e.target as HTMLElement).classList.contains('collab-image-modal-close')) {
                 modal.remove();
@@ -1974,7 +1993,7 @@ export class MentionPanelView extends ItemView {
                         this.chatSearchQuery = '';
                         this.chatSearchResults = [];
                         if (this.chatContainer) {
-                            this.renderChat(this.chatContainer);
+                            void this.renderChat(this.chatContainer);
                         }
                     });
                     lastChannelId = msg.channelId;
@@ -1999,7 +2018,7 @@ export class MentionPanelView extends ItemView {
                         this.chatSearchQuery = '';
                         this.chatSearchResults = [];
                         if (this.chatContainer) {
-                            this.renderChat(this.chatContainer);
+                            void this.renderChat(this.chatContainer);
                         }
                     });
                 }
@@ -2345,7 +2364,7 @@ class EditMessageModal extends Modal {
         contentEl.empty();
         contentEl.addClass('collab-edit-message-modal');
 
-        contentEl.createEl('h3', { text: 'Edit Message' });
+        contentEl.createEl('h3', { text: 'Edit message' });
 
         const textarea = contentEl.createEl('textarea', {
             cls: 'collab-edit-message-input',
@@ -2404,12 +2423,12 @@ class NewChannelModal extends Modal {
         contentEl.empty();
         contentEl.addClass('collab-new-channel-modal');
 
-        contentEl.createEl('h3', { text: 'New Conversation' });
+        contentEl.createEl('h3', { text: 'New conversation' });
 
         // Tabs
         const tabsEl = contentEl.createEl('div', { cls: 'collab-modal-tabs' });
-        const groupTab = tabsEl.createEl('button', { text: 'Group Channel', cls: 'active' });
-        const dmTab = tabsEl.createEl('button', { text: 'Direct Message' });
+        const groupTab = tabsEl.createEl('button', { text: 'Group channel', cls: 'active' });
+        const dmTab = tabsEl.createEl('button', { text: 'Direct message' });
 
         const formEl = contentEl.createEl('div', { cls: 'collab-modal-form' });
 
@@ -2418,13 +2437,13 @@ class NewChannelModal extends Modal {
             this.activeTab = 'group';
 
             // Channel name
-            formEl.createEl('label', { text: 'Channel Name' });
+            formEl.createEl('label', { text: 'Channel name' });
             const nameInput = formEl.createEl('input', {
                 attr: { type: 'text', placeholder: 'e.g., project-alpha' }
             });
 
             // Member selection
-            formEl.createEl('label', { text: 'Add Members' });
+            formEl.createEl('label', { text: 'Add members' });
             const membersContainer = formEl.createEl('div', { cls: 'collab-member-select' });
 
             const currentUser = this.userManager.getCurrentUser();
@@ -2452,7 +2471,7 @@ class NewChannelModal extends Modal {
 
             // Create button
             const createBtn = formEl.createEl('button', {
-                text: 'Create Channel',
+                text: 'Create channel',
                 cls: 'collab-create-btn'
             });
             createBtn.addEventListener('click', async () => {
@@ -2473,7 +2492,7 @@ class NewChannelModal extends Modal {
             formEl.empty();
             this.activeTab = 'dm';
 
-            formEl.createEl('label', { text: 'Select User' });
+            formEl.createEl('label', { text: 'Select user' });
             const userSelect = formEl.createEl('select', { cls: 'collab-user-select' });
 
             const currentUser = this.userManager.getCurrentUser();
@@ -2486,7 +2505,7 @@ class NewChannelModal extends Modal {
 
             // Start DM button
             const startBtn = formEl.createEl('button', {
-                text: 'Start Conversation',
+                text: 'Start conversation',
                 cls: 'collab-create-btn'
             });
             startBtn.addEventListener('click', async () => {
@@ -2542,7 +2561,7 @@ class AddMemberModal extends Modal {
         contentEl.empty();
         contentEl.addClass('collab-add-member-modal');
 
-        contentEl.createEl('h3', { text: 'Add Member' });
+        contentEl.createEl('h3', { text: 'Add member' });
 
         // Current members
         contentEl.createEl('p', {
@@ -2568,7 +2587,7 @@ class AddMemberModal extends Modal {
             return;
         }
 
-        contentEl.createEl('label', { text: 'Select User' });
+        contentEl.createEl('label', { text: 'Select user' });
         const userSelect = contentEl.createEl('select', { cls: 'collab-user-select' });
 
         for (const user of availableUsers) {
@@ -2577,7 +2596,7 @@ class AddMemberModal extends Modal {
 
         // Add button
         const addBtn = contentEl.createEl('button', {
-            text: 'Add Member',
+            text: 'Add member',
             cls: 'collab-create-btn'
         });
         addBtn.addEventListener('click', async () => {
@@ -2612,7 +2631,7 @@ class ConfirmDeleteModal extends Modal {
         contentEl.empty();
         contentEl.addClass('collab-confirm-modal');
 
-        contentEl.createEl('h3', { text: 'Delete Message?' });
+        contentEl.createEl('h3', { text: 'Delete message?' });
         contentEl.createEl('p', { text: 'This action cannot be undone.' });
 
         const buttonRow = contentEl.createEl('div', { cls: 'collab-confirm-buttons' });
@@ -2838,7 +2857,7 @@ class NewReminderModal extends Modal {
         contentEl.empty();
         contentEl.addClass('collab-reminder-modal');
 
-        contentEl.createEl('h3', { text: 'New Reminder' });
+        contentEl.createEl('h3', { text: 'New reminder' });
 
         // Message input
         contentEl.createEl('label', { text: 'What do you want to remember?' });
@@ -2924,7 +2943,7 @@ class NewReminderModal extends Modal {
         cancelBtn.addEventListener('click', () => this.close());
 
         const createBtn = buttonRow.createEl('button', {
-            text: 'Create Reminder',
+            text: 'Create reminder',
             cls: 'collab-reminder-create-btn'
         });
         createBtn.addEventListener('click', async () => {
@@ -2998,7 +3017,7 @@ class EditReminderModal extends Modal {
         contentEl.empty();
         contentEl.addClass('collab-reminder-modal');
 
-        contentEl.createEl('h3', { text: 'Edit Reminder' });
+        contentEl.createEl('h3', { text: 'Edit reminder' });
 
         // Message input
         contentEl.createEl('label', { text: 'Message' });
@@ -3111,7 +3130,7 @@ class SnoozeModal extends Modal {
         contentEl.empty();
         contentEl.addClass('collab-snooze-modal');
 
-        contentEl.createEl('h3', { text: 'Snooze Reminder' });
+        contentEl.createEl('h3', { text: 'Snooze reminder' });
         contentEl.createEl('p', { text: 'Remind me again in...' });
 
         const optionsEl = contentEl.createEl('div', { cls: 'collab-snooze-options' });
@@ -3177,7 +3196,7 @@ export class ReminderNotificationModal extends Modal {
     }
 
     onOpen(): void {
-        console.log('[Collab-Mentions] ReminderNotificationModal onOpen called for:', this.reminder.id, this.reminder.message.substring(0, 30));
+        console.debug('[Collab-Mentions] ReminderNotificationModal onOpen called for:', this.reminder.id, this.reminder.message.substring(0, 30));
 
         const { contentEl, modalEl } = this;
         contentEl.empty();
@@ -3244,7 +3263,7 @@ export class ReminderNotificationModal extends Modal {
         const buttonRow = actionsEl.createEl('div', { cls: 'collab-reminder-notif-buttons' });
 
         const completeBtn = buttonRow.createEl('button', {
-            text: '✓ Mark Complete',
+            text: '✓ Mark complete',
             cls: 'collab-reminder-notif-complete-btn'
         });
         completeBtn.addEventListener('click', async () => {

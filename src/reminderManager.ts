@@ -28,7 +28,7 @@ export class ReminderManager {
      * Generate a simple unique ID
      */
     private generateId(): string {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
     }
 
     /**
@@ -202,7 +202,7 @@ export class ReminderManager {
         const now = new Date();
         const currentUser = this.userManager.getCurrentUser();
         if (!currentUser) {
-            console.log('[Collab-Mentions] checkDueReminders: no current user');
+            console.debug('[Collab-Mentions] checkDueReminders: no current user');
             return [];
         }
 
@@ -212,7 +212,7 @@ export class ReminderManager {
         // Log all non-completed reminders for debugging
         const activeReminders = this.remindersData.reminders.filter(r => !r.completed);
         if (activeReminders.length > 0) {
-            console.log('[Collab-Mentions] checkDueReminders: checking', activeReminders.length, 'active reminders at', now.toISOString());
+            console.debug('[Collab-Mentions] checkDueReminders: checking', activeReminders.length, 'active reminders at', now.toISOString());
         }
 
         for (const reminder of this.remindersData.reminders) {
@@ -226,7 +226,7 @@ export class ReminderManager {
             const alreadyNotified = reminder.notified;
 
             if (isDue) {
-                console.log('[Collab-Mentions] Reminder due check:', {
+                console.debug('[Collab-Mentions] Reminder due check:', {
                     id: reminder.id,
                     message: reminder.message.substring(0, 30),
                     dueDate: dueDate.toISOString(),
@@ -252,7 +252,7 @@ export class ReminderManager {
                     if (!reminder.notifiedUsers) reminder.notifiedUsers = [];
                     reminder.notifiedUsers.push(currentUser.vaultName);
                     needsSave = true;
-                    console.log('[Collab-Mentions] Global reminder needs notification for user:', currentUser.vaultName);
+                    console.debug('[Collab-Mentions] Global reminder needs notification for user:', currentUser.vaultName);
                 }
             } else {
                 // Personal reminder: only notify owner, only once
@@ -260,7 +260,7 @@ export class ReminderManager {
                     shouldNotify = true;
                     reminder.notified = true;
                     needsSave = true;
-                    console.log('[Collab-Mentions] Personal reminder needs notification');
+                    console.debug('[Collab-Mentions] Personal reminder needs notification');
                 }
             }
 
@@ -268,7 +268,7 @@ export class ReminderManager {
                 dueReminders.push(reminder);
                 // Trigger callback
                 if (this.onReminderDue) {
-                    console.log('[Collab-Mentions] Triggering onReminderDue callback for:', reminder.message.substring(0, 30));
+                    console.debug('[Collab-Mentions] Triggering onReminderDue callback for:', reminder.message.substring(0, 30));
                     this.onReminderDue(reminder);
                 } else {
                     console.error('[Collab-Mentions] WARNING: onReminderDue callback not set!');
@@ -279,7 +279,7 @@ export class ReminderManager {
         if (needsSave) {
             this.remindersData.lastChecked = now.toISOString();
             await this.saveReminders();
-            console.log('[Collab-Mentions] Saved reminders after marking as notified');
+            console.debug('[Collab-Mentions] Saved reminders after marking as notified');
         }
 
         return dueReminders;
@@ -293,10 +293,10 @@ export class ReminderManager {
             clearInterval(this.checkInterval);
         }
 
-        console.log('[Collab-Mentions] Starting periodic reminder check every', intervalMs, 'ms');
+        console.debug('[Collab-Mentions] Starting periodic reminder check every', intervalMs, 'ms');
 
         // Check immediately on start
-        console.log('[Collab-Mentions] Running immediate check on startPeriodicCheck');
+        console.debug('[Collab-Mentions] Running immediate check on startPeriodicCheck');
         this.checkDueReminders();
 
         // Then check periodically - reload from disk first to catch any changes
@@ -305,7 +305,7 @@ export class ReminderManager {
             const now = new Date();
             const activeReminders = this.remindersData.reminders.filter(r => !r.completed && !r.notified);
             if (activeReminders.length > 0) {
-                console.log('[Collab-Mentions] Periodic check running at', now.toISOString(),
+                console.debug('[Collab-Mentions] Periodic check running at', now.toISOString(),
                     'with', activeReminders.length, 'active unnotified reminders');
             }
 
@@ -313,7 +313,7 @@ export class ReminderManager {
             await this.loadReminders();
             const dueReminders = await this.checkDueReminders();
             if (dueReminders.length > 0) {
-                console.log('[Collab-Mentions] Periodic check found due reminders:', dueReminders.length);
+                console.debug('[Collab-Mentions] Periodic check found due reminders:', dueReminders.length);
             }
         }, intervalMs);
     }

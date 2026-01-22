@@ -149,7 +149,7 @@ export class ChatManager {
                     const recentToggle = this.getRecentReactionToggle(ourMsg.id, reaction.emoji, user);
                     if (recentToggle && !recentToggle.added) {
                         // User recently REMOVED this reaction - don't re-add from disk
-                        console.log(`[Collab-Mentions] Merge: Skipping re-add of ${reaction.emoji} by ${user} (recently removed)`);
+                        console.debug(`[Collab-Mentions] Merge: Skipping re-add of ${reaction.emoji} by ${user} (recently removed)`);
                         continue;
                     }
                     emojiMap.get(reaction.emoji)!.add(user);
@@ -259,7 +259,7 @@ export class ChatManager {
 
             const exists = this.chatData.channelMessages[entry.channelId].some(m => m.id === msgId);
             if (!exists) {
-                console.log(`Re-adding protected message ${msgId} that was lost during sync`);
+                console.debug(`Re-adding protected message ${msgId} that was lost during sync`);
                 this.chatData.channelMessages[entry.channelId].push(entry.message);
                 // Sort by timestamp
                 this.chatData.channelMessages[entry.channelId].sort(
@@ -321,7 +321,7 @@ export class ChatManager {
      * Generate a simple unique ID
      */
     private generateId(): string {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
     }
 
     /**
@@ -366,7 +366,7 @@ export class ChatManager {
                     console.error('[Collab-Mentions] Failed to load chat after', MAX_LOAD_RETRIES, 'attempts:', lastError);
                     // Keep existing data if we have it
                     if (this.chatData && this.chatData.channels.length > 0) {
-                        console.log('[Collab-Mentions] Keeping existing in-memory data');
+                        console.debug('[Collab-Mentions] Keeping existing in-memory data');
                         return;
                     }
                     // Otherwise use empty data
@@ -379,7 +379,7 @@ export class ChatManager {
                     diskData = rawData;
                 } else {
                     // Migrate from V1
-                    console.log('Migrating chat data from V1 to V2...');
+                    console.debug('Migrating chat data from V1 to V2...');
                     diskData = this.migrateV1ToV2(rawData as ChatDataV1);
                 }
 
@@ -407,7 +407,7 @@ export class ChatManager {
                 const ourDeletedIds = new Set(this.chatData.deletedChannels.map(d => d.id));
                 for (const diskDeleted of diskData.deletedChannels) {
                     if (!ourDeletedIds.has(diskDeleted.id)) {
-                        console.log('[Collab-Mentions] Syncing deleted channel from disk:', diskDeleted.id);
+                        console.debug('[Collab-Mentions] Syncing deleted channel from disk:', diskDeleted.id);
                         this.chatData.deletedChannels.push(diskDeleted);
                         // Also add to memory cache for immediate effect
                         this.recentlyDeletedChannels.set(diskDeleted.id, new Date(diskDeleted.deletedAt).getTime());
@@ -439,7 +439,7 @@ export class ChatManager {
                 });
 
                 for (const ch of channelsToRemove) {
-                    console.log('[Collab-Mentions] Removing explicitly deleted channel:', ch.id, ch.name);
+                    console.debug('[Collab-Mentions] Removing explicitly deleted channel:', ch.id, ch.name);
                     this.chatData.channels = this.chatData.channels.filter(c => c.id !== ch.id);
                     delete this.chatData.channelMessages[ch.id];
                     delete this.chatData.readState[ch.id];
@@ -450,7 +450,7 @@ export class ChatManager {
                     ch.id !== GENERAL_CHANNEL_ID && !diskChannelIds.has(ch.id) && !deletedChannelIds.has(ch.id)
                 );
                 if (localOnlyChannels.length > 0) {
-                    console.log('[Collab-Mentions] Preserving local-only channels (will sync back):',
+                    console.debug('[Collab-Mentions] Preserving local-only channels (will sync back):',
                         localOnlyChannels.map(c => ({ id: c.id, name: c.name })));
                 }
 
@@ -459,7 +459,7 @@ export class ChatManager {
                 for (const diskChannel of diskData.channels) {
                     // Skip if we recently deleted this channel locally
                     if (this.isRecentlyDeletedChannel(diskChannel.id)) {
-                        console.log('[Collab-Mentions] Skipping recently deleted channel:', diskChannel.id);
+                        console.debug('[Collab-Mentions] Skipping recently deleted channel:', diskChannel.id);
                         continue;
                     }
 
@@ -471,9 +471,9 @@ export class ChatManager {
                         if (currentUser && this.hasRecentlyLeftChannel(diskChannel.id)) {
                             // Remove current user from members if they recently left
                             diskChannel.members = diskChannel.members.filter(m => m !== currentUser.vaultName);
-                            console.log('[Collab-Mentions] Adding new channel from disk (filtered after recent leave):', diskChannel.id, diskChannel.name);
+                            console.debug('[Collab-Mentions] Adding new channel from disk (filtered after recent leave):', diskChannel.id, diskChannel.name);
                         } else {
-                            console.log('[Collab-Mentions] Adding new channel from disk:', diskChannel.id, diskChannel.name);
+                            console.debug('[Collab-Mentions] Adding new channel from disk:', diskChannel.id, diskChannel.name);
                         }
 
                         // Also add any recently added members that aren't on disk yet
@@ -481,7 +481,7 @@ export class ChatManager {
                         for (const member of recentlyAdded) {
                             if (!diskChannel.members.includes(member)) {
                                 diskChannel.members.push(member);
-                                console.log('[Collab-Mentions] Preserved recently added member in new channel:', member);
+                                console.debug('[Collab-Mentions] Preserved recently added member in new channel:', member);
                             }
                         }
 
@@ -489,7 +489,7 @@ export class ChatManager {
                     } else {
                         // Existing channel - merge properties
                         // For members: disk is source of truth (handles leaves properly)
-                        console.log('[Collab-Mentions] Merging channel:', ourChannel.id,
+                        console.debug('[Collab-Mentions] Merging channel:', ourChannel.id,
                             'our members:', ourChannel.members,
                             'disk members:', diskChannel.members);
 
@@ -502,7 +502,7 @@ export class ChatManager {
                             const wasInDiskMembers = mergedMembers.includes(currentUser.vaultName);
                             mergedMembers = mergedMembers.filter(m => m !== currentUser.vaultName);
                             if (wasInDiskMembers) {
-                                console.log('[Collab-Mentions] Prevented re-adding user after recent leave:', currentUser.vaultName);
+                                console.debug('[Collab-Mentions] Prevented re-adding user after recent leave:', currentUser.vaultName);
                             }
                         }
 
@@ -511,7 +511,7 @@ export class ChatManager {
                         for (const member of recentlyAdded) {
                             if (!mergedMembers.includes(member)) {
                                 mergedMembers.push(member);
-                                console.log('[Collab-Mentions] Preserved recently added member:', member);
+                                console.debug('[Collab-Mentions] Preserved recently added member:', member);
                             }
                         }
 
@@ -750,7 +750,7 @@ export class ChatManager {
                     const savedHash = this.computeHash(savedContent);
 
                     if (savedHash === expectedHash) {
-                        console.log('[Collab-Mentions] Chat saved and verified (attempt', attempt + ')');
+                        console.debug('[Collab-Mentions] Chat saved and verified (attempt', attempt + ')');
                         return; // Success!
                     } else {
                         console.warn(`[Collab-Mentions] Chat save verification failed (attempt ${attempt}/${MAX_SAVE_RETRIES}), hash mismatch`);
@@ -889,7 +889,7 @@ export class ChatManager {
         const currentUser = this.userManager.getCurrentUser();
         if (currentUser && newMember === currentUser.vaultName) {
             this.recentlyLeftChannels.delete(channelId);
-            console.log('[Collab-Mentions] Cleared leave protection - user explicitly rejoined');
+            console.debug('[Collab-Mentions] Cleared leave protection - user explicitly rejoined');
         }
 
         // If DM, convert to group
@@ -932,13 +932,13 @@ export class ChatManager {
     async leaveChannel(channelId: string, username: string): Promise<'left' | 'deleted' | false> {
         const channel = this.chatData.channels.find(ch => ch.id === channelId);
         if (!channel) {
-            console.log('[Collab-Mentions] leaveChannel: channel not found', channelId);
+            console.debug('[Collab-Mentions] leaveChannel: channel not found', channelId);
             return false;
         }
         if (channel.type === 'general') return false; // Can't leave General
 
         const wasLastMember = this.isLastMember(channelId, username);
-        console.log('[Collab-Mentions] leaveChannel:', channelId, 'user:', username, 'members before:', channel.members, 'isLastMember:', wasLastMember);
+        console.debug('[Collab-Mentions] leaveChannel:', channelId, 'user:', username, 'members before:', channel.members, 'isLastMember:', wasLastMember);
 
         channel.members = channel.members.filter(m => m !== username);
 
@@ -950,11 +950,11 @@ export class ChatManager {
         const channelAddedMembers = this.recentlyAddedMembers.get(channelId);
         if (channelAddedMembers) {
             channelAddedMembers.delete(username);
-            console.log('[Collab-Mentions] leaveChannel: cleared add protection for', username);
+            console.debug('[Collab-Mentions] leaveChannel: cleared add protection for', username);
         }
 
-        console.log('[Collab-Mentions] leaveChannel: tracking leave for merge protection');
-        console.log('[Collab-Mentions] leaveChannel: members after:', channel.members);
+        console.debug('[Collab-Mentions] leaveChannel: tracking leave for merge protection');
+        console.debug('[Collab-Mentions] leaveChannel: members after:', channel.members);
 
         // If this was the active channel, switch to General
         if (this.activeChannelId === channelId) {
@@ -963,7 +963,7 @@ export class ChatManager {
 
         // If channel is now empty, delete it
         if (channel.members.length === 0) {
-            console.log('[Collab-Mentions] leaveChannel: channel now empty, deleting');
+            console.debug('[Collab-Mentions] leaveChannel: channel now empty, deleting');
             await this.deleteChannel(channelId);
             return 'deleted';
         }
@@ -990,7 +990,7 @@ export class ChatManager {
         const currentUser = this.userManager.getCurrentUser();
         const deletedBy = currentUser?.vaultName || 'unknown';
 
-        console.log('[Collab-Mentions] deleteChannel:', channelId, 'by:', deletedBy, 'channels before:', this.chatData.channels.length);
+        console.debug('[Collab-Mentions] deleteChannel:', channelId, 'by:', deletedBy, 'channels before:', this.chatData.channels.length);
 
         // Track this deletion in memory to prevent re-add during sync
         const now = Date.now();
@@ -1007,11 +1007,11 @@ export class ChatManager {
                 deletedAt: new Date().toISOString(),
                 deletedBy: deletedBy
             });
-            console.log('[Collab-Mentions] Added to deletedChannels for sync');
+            console.debug('[Collab-Mentions] Added to deletedChannels for sync');
         }
 
         this.chatData.channels = this.chatData.channels.filter(ch => ch.id !== channelId);
-        console.log('[Collab-Mentions] deleteChannel: channels after:', this.chatData.channels.length);
+        console.debug('[Collab-Mentions] deleteChannel: channels after:', this.chatData.channels.length);
         delete this.chatData.channelMessages[channelId];
         delete this.chatData.readState[channelId];
 
@@ -1020,7 +1020,7 @@ export class ChatManager {
         }
 
         await this.saveChat();
-        console.log('[Collab-Mentions] deleteChannel: saved');
+        console.debug('[Collab-Mentions] deleteChannel: saved');
         return true;
     }
 
@@ -1092,7 +1092,7 @@ export class ChatManager {
                                         exported: exportedPath,
                                         filename: exportedFilename
                                     });
-                                    console.log('[Collab-Mentions] Exported image:', img.path, '->', exportedPath);
+                                    console.debug('[Collab-Mentions] Exported image:', img.path, '->', exportedPath);
                                 } catch (imgError) {
                                     console.warn('[Collab-Mentions] Failed to copy image:', img.path, imgError);
                                 }
@@ -1170,7 +1170,7 @@ export class ChatManager {
             }
 
             await this.app.vault.adapter.write(filePath, content);
-            console.log('[Collab-Mentions] Exported channel to:', filePath);
+            console.debug('[Collab-Mentions] Exported channel to:', filePath);
             return filePath;
         } catch (error) {
             console.error('[Collab-Mentions] Failed to export channel:', error);
@@ -1186,7 +1186,7 @@ export class ChatManager {
             this.recentlyAddedMembers.set(channelId, new Map());
         }
         this.recentlyAddedMembers.get(channelId)!.set(username, Date.now());
-        console.log('[Collab-Mentions] Tracking member added for merge protection:', username, 'to', channelId);
+        console.debug('[Collab-Mentions] Tracking member added for merge protection:', username, 'to', channelId);
     }
 
     /**
@@ -1646,7 +1646,7 @@ export class ChatManager {
             added,
             timestamp: Date.now()
         });
-        console.log(`[Collab-Mentions] Tracked reaction toggle: ${emoji} by ${username} on ${messageId} (${added ? 'added' : 'removed'})`);
+        console.debug(`[Collab-Mentions] Tracked reaction toggle: ${emoji} by ${username} on ${messageId} (${added ? 'added' : 'removed'})`);
     }
 
     /**

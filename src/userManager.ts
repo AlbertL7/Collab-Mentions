@@ -60,16 +60,16 @@ export class UserManager {
 
                     // If lock is stale (older than timeout), we can take it
                     if (lockAge > LOCK_TIMEOUT) {
-                        console.log('[Collab-Mentions] Stale lock found, taking over');
+                        console.debug('[Collab-Mentions] Stale lock found, taking over');
                     } else if (lockData.holder !== localId) {
                         // Lock is held by someone else and not stale
-                        console.log('[Collab-Mentions] Lock held by:', lockData.holder);
+                        console.debug('[Collab-Mentions] Lock held by:', lockData.holder);
                         return false;
                     }
                     // If we're the holder, refresh the lock
                 } catch {
                     // Invalid lock file, we can take it
-                    console.log('[Collab-Mentions] Invalid lock file, taking over');
+                    console.debug('[Collab-Mentions] Invalid lock file, taking over');
                 }
             }
 
@@ -86,10 +86,10 @@ export class UserManager {
             const verifyData = JSON.parse(verifyContent);
 
             if (verifyData.holder === localId) {
-                console.log('[Collab-Mentions] Lock acquired');
+                console.debug('[Collab-Mentions] Lock acquired');
                 return true;
             } else {
-                console.log('[Collab-Mentions] Lost lock race to:', verifyData.holder);
+                console.debug('[Collab-Mentions] Lost lock race to:', verifyData.holder);
                 return false;
             }
         } catch (error) {
@@ -113,7 +113,7 @@ export class UserManager {
                     // Only release if we hold the lock
                     if (lockData.holder === localId) {
                         await this.app.vault.adapter.remove(lockPath);
-                        console.log('[Collab-Mentions] Lock released');
+                        console.debug('[Collab-Mentions] Lock released');
                     }
                 } catch {
                     // Invalid lock file, just remove it
@@ -456,13 +456,13 @@ export class UserManager {
             if (await this.app.vault.adapter.exists(configPath)) {
                 const content = await this.app.vault.adapter.read(configPath);
                 this.usersConfig = JSON.parse(content);
-                console.log('[Collab-Mentions] Loaded users:', this.usersConfig.users.map(u => u.vaultName));
+                console.debug('[Collab-Mentions] Loaded users:', this.usersConfig.users.map(u => u.vaultName));
 
                 // Migration: Ensure at least one admin exists
                 await this.ensureAdminExists();
             } else {
                 // Create default config
-                console.log('[Collab-Mentions] No users file found, creating empty config');
+                console.debug('[Collab-Mentions] No users file found, creating empty config');
                 this.usersConfig = { users: [] };
                 await this.saveUsers();
             }
@@ -494,14 +494,14 @@ export class UserManager {
                 if (userInConfig && !userInConfig.registrationNumber) {
                     userInConfig.registrationNumber = index + 1;
                     needsSave = true;
-                    console.log(`[Collab-Mentions] Migration: Assigned registration #${index + 1} to ${userInConfig.vaultName}`);
+                    console.debug(`[Collab-Mentions] Migration: Assigned registration #${index + 1} to ${userInConfig.vaultName}`);
                 }
             });
         }
 
         // Step 2: Ensure EXACTLY ONE primary admin (the one with registration #1)
         const primaryAdmins = this.usersConfig.users.filter(u => u.adminLevel === 'primary');
-        console.log('[Collab-Mentions] Current primary admins:', primaryAdmins.map(u => u.vaultName));
+        console.debug('[Collab-Mentions] Current primary admins:', primaryAdmins.map(u => u.vaultName));
 
         if (primaryAdmins.length !== 1) {
             // Fix: demote all to secondary, then promote registration #1
@@ -509,7 +509,7 @@ export class UserManager {
                 if (user.adminLevel === 'primary' && user.registrationNumber !== 1) {
                     user.adminLevel = 'secondary';
                     needsSave = true;
-                    console.log(`[Collab-Mentions] Migration: Demoted ${user.vaultName} from primary to secondary admin`);
+                    console.debug(`[Collab-Mentions] Migration: Demoted ${user.vaultName} from primary to secondary admin`);
                 }
             }
         }
@@ -521,7 +521,7 @@ export class UserManager {
                 firstUser.isAdmin = true;
                 firstUser.adminLevel = 'primary';
                 needsSave = true;
-                console.log(`[Collab-Mentions] Migration: Set ${firstUser.vaultName} as primary admin (registration #1)`);
+                console.debug(`[Collab-Mentions] Migration: Set ${firstUser.vaultName} as primary admin (registration #1)`);
             }
         }
 
@@ -531,12 +531,12 @@ export class UserManager {
             if (user.isAdmin && !user.adminLevel && user.registrationNumber !== 1) {
                 user.adminLevel = 'secondary';
                 needsSave = true;
-                console.log(`[Collab-Mentions] Migration: Set ${user.vaultName} as secondary admin`);
+                console.debug(`[Collab-Mentions] Migration: Set ${user.vaultName} as secondary admin`);
             }
         }
 
         // Log final state
-        console.log('[Collab-Mentions] Users after migration:', this.usersConfig.users.map(u => ({
+        console.debug('[Collab-Mentions] Users after migration:', this.usersConfig.users.map(u => ({
             name: u.vaultName,
             regNum: u.registrationNumber,
             isAdmin: u.isAdmin,
@@ -566,10 +566,10 @@ export class UserManager {
                         if (!ourLocalIds.has(diskUser.localIdentifier)) {
                             // Check if this user was recently deleted
                             if (this.isRecentlyDeletedUser(diskUser.localIdentifier)) {
-                                console.log('[Collab-Mentions] Skipping recently deleted user:', diskUser.vaultName);
+                                console.debug('[Collab-Mentions] Skipping recently deleted user:', diskUser.vaultName);
                                 continue;
                             }
-                            console.log('[Collab-Mentions] Merging user from disk:', diskUser.vaultName);
+                            console.debug('[Collab-Mentions] Merging user from disk:', diskUser.vaultName);
                             this.usersConfig.users.push(diskUser);
                         }
                     }
@@ -594,11 +594,11 @@ export class UserManager {
                         } else if (user.adminLevel === 'primary') {
                             // Demote any other primary admins to secondary
                             user.adminLevel = 'secondary';
-                            console.log('[Collab-Mentions] Demoted duplicate primary admin:', user.vaultName);
+                            console.debug('[Collab-Mentions] Demoted duplicate primary admin:', user.vaultName);
                         }
                     }
 
-                    console.log('[Collab-Mentions] After merge - users:', this.usersConfig.users.map(u => ({
+                    console.debug('[Collab-Mentions] After merge - users:', this.usersConfig.users.map(u => ({
                         name: u.vaultName,
                         regNum: u.registrationNumber,
                         adminLevel: u.adminLevel
@@ -621,7 +621,7 @@ export class UserManager {
                     const savedHash = this.computeHash(savedContent);
 
                     if (savedHash === expectedHash) {
-                        console.log('[Collab-Mentions] Users saved and verified (attempt', attempt + ')');
+                        console.debug('[Collab-Mentions] Users saved and verified (attempt', attempt + ')');
                         return; // Success!
                     } else {
                         console.warn(`[Collab-Mentions] Users save verification failed (attempt ${attempt}/${MAX_SAVE_RETRIES}), hash mismatch`);
@@ -664,7 +664,7 @@ export class UserManager {
 
         // Retry loop with locking
         for (let attempt = 1; attempt <= MAX_REGISTRATION_RETRIES; attempt++) {
-            console.log(`[Collab-Mentions] Registration attempt ${attempt}/${MAX_REGISTRATION_RETRIES}`);
+            console.debug(`[Collab-Mentions] Registration attempt ${attempt}/${MAX_REGISTRATION_RETRIES}`);
 
             // Try to acquire lock
             const lockAcquired = await this.acquireLock();
@@ -672,7 +672,7 @@ export class UserManager {
                 if (attempt < MAX_REGISTRATION_RETRIES) {
                     // Wait and retry
                     const waitTime = 500 * attempt; // 500ms, 1s, 1.5s
-                    console.log(`[Collab-Mentions] Could not acquire lock, waiting ${waitTime}ms...`);
+                    console.debug(`[Collab-Mentions] Could not acquire lock, waiting ${waitTime}ms...`);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                     continue;
                 } else {
@@ -684,7 +684,7 @@ export class UserManager {
             try {
                 // CRITICAL: Reload users from disk FIRST to get the latest state
                 await this.loadUsers();
-                console.log('[Collab-Mentions] Registration: Reloaded users, count:', this.usersConfig.users.length);
+                console.debug('[Collab-Mentions] Registration: Reloaded users, count:', this.usersConfig.users.length);
 
                 // Check if this local identifier is already registered
                 const existingByLocal = this.usersConfig.users.find(
@@ -745,7 +745,7 @@ export class UserManager {
                     return true;
                 } else {
                     // Registration was lost (race condition) - retry
-                    console.log('[Collab-Mentions] Registration not verified, retrying...');
+                    console.debug('[Collab-Mentions] Registration not verified, retrying...');
                     if (attempt >= MAX_REGISTRATION_RETRIES) {
                         new Notice('Registration failed, please try again');
                         return false;
@@ -782,7 +782,7 @@ export class UserManager {
 
             // Track this user as recently deleted to prevent merge from re-adding
             this.recentlyDeletedUsers.set(this.currentUser.localIdentifier, Date.now());
-            console.log('[Collab-Mentions] Tracking unregistered user:', name);
+            console.debug('[Collab-Mentions] Tracking unregistered user:', name);
 
             this.usersConfig.users.splice(index, 1);
 
@@ -802,7 +802,7 @@ export class UserManager {
                 if (userInConfig) {
                     userInConfig.isAdmin = true;
                     userInConfig.adminLevel = 'primary';
-                    console.log(`Primary admin left. Promoted ${userInConfig.vaultName} to primary admin.`);
+                    console.debug(`Primary admin left. Promoted ${userInConfig.vaultName} to primary admin.`);
                     new Notice(`${userInConfig.vaultName} has been promoted to primary admin`);
                 }
             }
@@ -986,7 +986,7 @@ export class UserManager {
         // Track this user as recently deleted to prevent merge from re-adding
         const userToRemove = this.usersConfig.users[index];
         this.recentlyDeletedUsers.set(userToRemove.localIdentifier, Date.now());
-        console.log('[Collab-Mentions] Tracking deleted user:', userToRemove.vaultName, userToRemove.localIdentifier);
+        console.debug('[Collab-Mentions] Tracking deleted user:', userToRemove.vaultName, userToRemove.localIdentifier);
 
         this.usersConfig.users.splice(index, 1);
         await this.saveUsers();
