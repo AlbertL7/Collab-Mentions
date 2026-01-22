@@ -380,7 +380,7 @@ export class ChatManager {
                 } else {
                     // Migrate from V1
                     console.debug('Migrating chat data from V1 to V2...');
-                    diskData = this.migrateV1ToV2(rawData as ChatDataV1);
+                    diskData = this.migrateV1ToV2(rawData);
                 }
 
                 // If we have no data yet, just use disk data
@@ -2024,7 +2024,7 @@ export class ChatManager {
      * Extract URLs from message text
      */
     static extractUrls(message: string): string[] {
-        const regex = /(https?:\/\/[^\s<>\[\]]+)/g;
+        const regex = /(https?:\/\/[^\s<>[\]]+)/g;
         const urls: string[] = [];
         let match;
 

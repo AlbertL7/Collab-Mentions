@@ -60,6 +60,7 @@ export class Notifier {
      * Check for unread mentions and notify
      */
     async checkAndNotify(playSound: boolean = true): Promise<number> {
+        await Promise.resolve();
         const unread = this.mentionParser.getUnreadMentions();
 
         if (unread.length > 0) {
@@ -88,6 +89,7 @@ export class Notifier {
      * Notify about specific new unread mentions (prevents repeat notifications)
      */
     async notifyNewUnread(mentions: Mention[], playSound: boolean = true): Promise<void> {
+        await Promise.resolve();
         if (mentions.length === 0) return;
 
         if (playSound) {
@@ -194,39 +196,43 @@ class UnreadMentionsModal extends Modal {
                 cls: 'mention-file-link'
             });
 
-            link.addEventListener('click', async (e) => {
+            link.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.close();
 
                 // Open the file and go to line
                 const file = this.app.vault.getAbstractFileByPath(mention.file);
                 if (file instanceof TFile) {
-                    const leaf = this.app.workspace.getLeaf();
-                    await leaf.openFile(file);
+                    void (async () => {
+                        const leaf = this.app.workspace.getLeaf();
+                        await leaf.openFile(file);
 
-                    // Try to scroll to line
-                    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-                    if (view && view.editor) {
-                        view.editor.setCursor({ line: mention.line, ch: 0 });
-                        view.editor.scrollIntoView({
-                            from: { line: mention.line, ch: 0 },
-                            to: { line: mention.line, ch: 0 }
-                        }, true);
-                    }
+                        // Try to scroll to line
+                        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+                        if (view && view.editor) {
+                            view.editor.setCursor({ line: mention.line, ch: 0 });
+                            view.editor.scrollIntoView({
+                                from: { line: mention.line, ch: 0 },
+                                to: { line: mention.line, ch: 0 }
+                            }, true);
+                        }
+                    })();
                 }
             });
 
             const actionsEl = itemEl.createEl('div', { cls: 'mention-actions' });
 
             const markReadBtn = actionsEl.createEl('button', {
-                text: '✓ Mark read',
+                text: 'Mark read ✓',
                 cls: 'mention-btn'
             });
-            markReadBtn.addEventListener('click', async () => {
-                await this.mentionParser.markAsRead(mention.id);
-                itemEl.addClass('mention-read');
-                markReadBtn.disabled = true;
-                markReadBtn.textContent = '✓ Read';
+            markReadBtn.addEventListener('click', () => {
+                void (async () => {
+                    await this.mentionParser.markAsRead(mention.id);
+                    itemEl.addClass('mention-read');
+                    markReadBtn.disabled = true;
+                    markReadBtn.textContent = 'Read ✓';
+                })();
             });
         }
 
@@ -236,10 +242,12 @@ class UnreadMentionsModal extends Modal {
             text: 'Mark all as read',
             cls: 'mention-btn-primary'
         });
-        markAllBtn.addEventListener('click', async () => {
-            await this.mentionParser.markAllAsRead();
-            this.close();
-            new Notice('All mentions marked as read');
+        markAllBtn.addEventListener('click', () => {
+            void (async () => {
+                await this.mentionParser.markAllAsRead();
+                this.close();
+                new Notice('All mentions marked as read.');
+            })();
         });
 
         const closeBtn = footerEl.createEl('button', {

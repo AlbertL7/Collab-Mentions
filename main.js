@@ -2947,7 +2947,7 @@ Reactions: ${reactions}
    * Extract URLs from message text
    */
   static extractUrls(message) {
-    const regex = /(https?:\/\/[^\s<>\[\]]+)/g;
+    const regex = /(https?:\/\/[^\s<>[\]]+)/g;
     const urls = [];
     let match;
     while ((match = regex.exec(message)) !== null) {
@@ -3211,24 +3211,26 @@ var ReminderManager = class {
     }
     console.debug("[Collab-Mentions] Starting periodic reminder check every", intervalMs, "ms");
     console.debug("[Collab-Mentions] Running immediate check on startPeriodicCheck");
-    this.checkDueReminders();
-    this.checkInterval = window.setInterval(async () => {
-      const now = new Date();
-      const activeReminders = this.remindersData.reminders.filter((r) => !r.completed && !r.notified);
-      if (activeReminders.length > 0) {
-        console.debug(
-          "[Collab-Mentions] Periodic check running at",
-          now.toISOString(),
-          "with",
-          activeReminders.length,
-          "active unnotified reminders"
-        );
-      }
-      await this.loadReminders();
-      const dueReminders = await this.checkDueReminders();
-      if (dueReminders.length > 0) {
-        console.debug("[Collab-Mentions] Periodic check found due reminders:", dueReminders.length);
-      }
+    void this.checkDueReminders();
+    this.checkInterval = window.setInterval(() => {
+      void (async () => {
+        const now = new Date();
+        const activeReminders = this.remindersData.reminders.filter((r) => !r.completed && !r.notified);
+        if (activeReminders.length > 0) {
+          console.debug(
+            "[Collab-Mentions] Periodic check running at",
+            now.toISOString(),
+            "with",
+            activeReminders.length,
+            "active unnotified reminders"
+          );
+        }
+        await this.loadReminders();
+        const dueReminders = await this.checkDueReminders();
+        if (dueReminders.length > 0) {
+          console.debug("[Collab-Mentions] Periodic check found due reminders:", dueReminders.length);
+        }
+      })();
     }, intervalMs);
   }
   /**
@@ -3502,6 +3504,7 @@ var Notifier = class {
    * Check for unread mentions and notify
    */
   async checkAndNotify(playSound = true) {
+    await Promise.resolve();
     const unread = this.mentionParser.getUnreadMentions();
     if (unread.length > 0) {
       if (playSound) {
@@ -3527,6 +3530,7 @@ var Notifier = class {
    * Notify about specific new unread mentions (prevents repeat notifications)
    */
   async notifyNewUnread(mentions, playSound = true) {
+    await Promise.resolve();
     if (mentions.length === 0)
       return;
     if (playSound) {
@@ -3614,33 +3618,37 @@ var UnreadMentionsModal = class extends import_obsidian2.Modal {
         text: `\u{1F4C4} ${mention.file}`,
         cls: "mention-file-link"
       });
-      link.addEventListener("click", async (e) => {
+      link.addEventListener("click", (e) => {
         e.preventDefault();
         this.close();
         const file = this.app.vault.getAbstractFileByPath(mention.file);
         if (file instanceof import_obsidian2.TFile) {
-          const leaf = this.app.workspace.getLeaf();
-          await leaf.openFile(file);
-          const view = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
-          if (view && view.editor) {
-            view.editor.setCursor({ line: mention.line, ch: 0 });
-            view.editor.scrollIntoView({
-              from: { line: mention.line, ch: 0 },
-              to: { line: mention.line, ch: 0 }
-            }, true);
-          }
+          void (async () => {
+            const leaf = this.app.workspace.getLeaf();
+            await leaf.openFile(file);
+            const view = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
+            if (view && view.editor) {
+              view.editor.setCursor({ line: mention.line, ch: 0 });
+              view.editor.scrollIntoView({
+                from: { line: mention.line, ch: 0 },
+                to: { line: mention.line, ch: 0 }
+              }, true);
+            }
+          })();
         }
       });
       const actionsEl = itemEl.createEl("div", { cls: "mention-actions" });
       const markReadBtn = actionsEl.createEl("button", {
-        text: "\u2713 Mark read",
+        text: "Mark read \u2713",
         cls: "mention-btn"
       });
-      markReadBtn.addEventListener("click", async () => {
-        await this.mentionParser.markAsRead(mention.id);
-        itemEl.addClass("mention-read");
-        markReadBtn.disabled = true;
-        markReadBtn.textContent = "\u2713 Read";
+      markReadBtn.addEventListener("click", () => {
+        void (async () => {
+          await this.mentionParser.markAsRead(mention.id);
+          itemEl.addClass("mention-read");
+          markReadBtn.disabled = true;
+          markReadBtn.textContent = "Read \u2713";
+        })();
       });
     }
     const footerEl = contentEl.createEl("div", { cls: "mention-footer" });
@@ -3648,10 +3656,12 @@ var UnreadMentionsModal = class extends import_obsidian2.Modal {
       text: "Mark all as read",
       cls: "mention-btn-primary"
     });
-    markAllBtn.addEventListener("click", async () => {
-      await this.mentionParser.markAllAsRead();
-      this.close();
-      new import_obsidian2.Notice("All mentions marked as read");
+    markAllBtn.addEventListener("click", () => {
+      void (async () => {
+        await this.mentionParser.markAllAsRead();
+        this.close();
+        new import_obsidian2.Notice("All mentions marked as read.");
+      })();
     });
     const closeBtn = footerEl.createEl("button", {
       text: "Close",
@@ -3727,7 +3737,7 @@ var RegisterModal = class extends import_obsidian3.Modal {
   }
   onOpen() {
     const { contentEl } = this;
-    new import_obsidian3.Setting(contentEl).setName("\u{1F464} Register for Collab Mentions").setHeading();
+    new import_obsidian3.Setting(contentEl).setName("Register for collab mentions \u{1F464}").setHeading();
     const localId = this.userManager.getLocalIdentifier();
     const os2 = this.userManager.getOS();
     contentEl.createEl("p", {
@@ -3739,7 +3749,7 @@ var RegisterModal = class extends import_obsidian3.Modal {
       cls: "collab-machine-info"
     });
     let vaultName = "";
-    new import_obsidian3.Setting(contentEl).setName("Your display name").setDesc("This is how others will @mention you (e.g., @Albert)").addText(
+    new import_obsidian3.Setting(contentEl).setName("Your display name").setDesc("This is how others will @mention you, for example @Albert").addText(
       (text) => text.setPlaceholder("Enter your name").onChange((value) => {
         vaultName = value.trim();
       })
@@ -3803,7 +3813,7 @@ var UserManagementModal = class extends import_obsidian3.Modal {
   render() {
     const { contentEl } = this;
     contentEl.empty();
-    new import_obsidian3.Setting(contentEl).setName("\u{1F465} Team members").setHeading();
+    new import_obsidian3.Setting(contentEl).setName("Team members \u{1F465}").setHeading();
     const currentUser = this.userManager.getCurrentUser();
     const allUsers = this.userManager.getAllUsers();
     const isAdmin = this.userManager.isCurrentUserAdmin();
@@ -3811,7 +3821,7 @@ var UserManagementModal = class extends import_obsidian3.Modal {
       const userInfo2 = contentEl.createEl("p", { cls: "collab-current-user" });
       userInfo2.createEl("span", { text: `You are registered as: @${currentUser.vaultName}` });
       if (isAdmin) {
-        userInfo2.createEl("span", { text: " (Admin)", cls: "collab-admin-badge" });
+        userInfo2.createEl("span", { text: " \u2014 admin", cls: "collab-admin-badge" });
       }
     }
     new import_obsidian3.Setting(contentEl).setName("Registered team members").setHeading();
@@ -3874,14 +3884,16 @@ var UserManagementModal = class extends import_obsidian3.Modal {
               text: user.isAdmin ? "Demote" : "Promote",
               cls: "collab-action-btn"
             });
-            adminBtn.addEventListener("click", async () => {
-              if (user.isAdmin) {
-                await this.userManager.demoteFromAdmin(user.vaultName);
-              } else {
-                await this.userManager.promoteToAdmin(user.vaultName);
-              }
-              this.render();
-              this.onUpdate();
+            adminBtn.addEventListener("click", () => {
+              void (async () => {
+                if (user.isAdmin) {
+                  await this.userManager.demoteFromAdmin(user.vaultName);
+                } else {
+                  await this.userManager.promoteToAdmin(user.vaultName);
+                }
+                this.render();
+                this.onUpdate();
+              })();
             });
           }
           if (!isCurrentUserRow && !isTargetPrimaryAdmin) {
@@ -3894,10 +3906,12 @@ var UserManagementModal = class extends import_obsidian3.Modal {
                 this.app,
                 "Remove team member?",
                 `Are you sure you want to remove "${user.vaultName}" from the team?`,
-                async () => {
-                  await this.userManager.removeUser(user.vaultName);
-                  this.render();
-                  this.onUpdate();
+                () => {
+                  void (async () => {
+                    await this.userManager.removeUser(user.vaultName);
+                    this.render();
+                    this.onUpdate();
+                  })();
                 }
               ).open();
             });
@@ -3913,10 +3927,12 @@ var UserManagementModal = class extends import_obsidian3.Modal {
             this.app,
             "Unregister from machine?",
             `Are you sure you want to unregister "${currentUser.vaultName}" from this machine?`,
-            async () => {
-              await this.userManager.unregisterCurrentUser();
-              this.onUpdate();
-              this.close();
+            () => {
+              void (async () => {
+                await this.userManager.unregisterCurrentUser();
+                this.onUpdate();
+                this.close();
+              })();
             }
           ).open();
         })
@@ -4011,6 +4027,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     void this.render();
   }
   async render() {
+    await Promise.resolve();
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass("collab-mentions-panel");
@@ -4063,17 +4080,23 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       setActiveTab(sentTab, "sent");
       void this.renderSent(contentEl);
     });
-    teamTab.addEventListener("click", async () => {
+    teamTab.addEventListener("click", () => {
       setActiveTab(teamTab, "team");
-      await this.renderTeam(contentEl);
+      void (async () => {
+        await this.renderTeam(contentEl);
+      })();
     });
-    chatTab.addEventListener("click", async () => {
+    chatTab.addEventListener("click", () => {
       setActiveTab(chatTab, "chat");
-      await this.renderChat(contentEl);
+      void (async () => {
+        await this.renderChat(contentEl);
+      })();
     });
-    remindersTab.addEventListener("click", async () => {
+    remindersTab.addEventListener("click", () => {
       setActiveTab(remindersTab, "reminders");
-      await this.renderReminders(contentEl);
+      void (async () => {
+        await this.renderReminders(contentEl);
+      })();
     });
     switch (this.activeTab) {
       case "sent":
@@ -4100,6 +4123,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     }
   }
   async renderInbox(container) {
+    await Promise.resolve();
     container.empty();
     container.removeClass("collab-chat-container");
     const allMentions = this.mentionParser.getAllMentionsForCurrentUser();
@@ -4123,19 +4147,23 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-btn-small collab-refresh-btn",
       attr: { title: "Refresh" }
     });
-    refreshBtn.addEventListener("click", async () => {
-      await this.mentionParser.loadMentions();
-      await this.renderInbox(container);
-      new import_obsidian4.Notice("Inbox refreshed");
+    refreshBtn.addEventListener("click", () => {
+      void (async () => {
+        await this.mentionParser.loadMentions();
+        await this.renderInbox(container);
+        new import_obsidian4.Notice("Inbox refreshed");
+      })();
     });
     if (unreadCount > 0) {
       const markAllBtn = actionWrapper.createEl("button", {
         text: "Mark all read",
         cls: "collab-btn-small"
       });
-      markAllBtn.addEventListener("click", async () => {
-        await this.mentionParser.markAllAsRead();
-        await this.renderInbox(container);
+      markAllBtn.addEventListener("click", () => {
+        void (async () => {
+          await this.mentionParser.markAllAsRead();
+          await this.renderInbox(container);
+        })();
       });
     }
     if (unreadCount > 0) {
@@ -4161,6 +4189,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     }
   }
   async renderSent(container) {
+    await Promise.resolve();
     container.empty();
     container.removeClass("collab-chat-container");
     const headerRow = container.createEl("div", { cls: "collab-inbox-header" });
@@ -4170,10 +4199,12 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-btn-small collab-refresh-btn",
       attr: { title: "Refresh" }
     });
-    refreshBtn.addEventListener("click", async () => {
-      await this.mentionParser.loadMentions();
-      await this.renderSent(container);
-      new import_obsidian4.Notice("Sent refreshed");
+    refreshBtn.addEventListener("click", () => {
+      void (async () => {
+        await this.mentionParser.loadMentions();
+        await this.renderSent(container);
+        new import_obsidian4.Notice("Sent refreshed");
+      })();
     });
     const mentions = this.mentionParser.getMentionsFromCurrentUser();
     if (mentions.length === 0) {
@@ -4197,11 +4228,13 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-btn-small collab-refresh-btn",
       attr: { title: "Refresh" }
     });
-    refreshBtn.addEventListener("click", async () => {
-      await this.userManager.loadPresence();
-      await this.userManager.loadUsers();
-      await this.renderTeam(container);
-      new import_obsidian4.Notice("Team refreshed");
+    refreshBtn.addEventListener("click", () => {
+      void (async () => {
+        await this.userManager.loadPresence();
+        await this.userManager.loadUsers();
+        await this.renderTeam(container);
+        new import_obsidian4.Notice("Team refreshed");
+      })();
     });
     await this.userManager.loadPresence();
     const usersWithStatus = this.userManager.getAllUsersWithStatus();
@@ -4229,9 +4262,11 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
           option.selected = true;
         }
       }
-      statusSelect.addEventListener("change", async () => {
-        await this.userManager.setManualStatus(statusSelect.value);
-        await this.renderTeam(container);
+      statusSelect.addEventListener("change", () => {
+        void (async () => {
+          await this.userManager.setManualStatus(statusSelect.value);
+          await this.renderTeam(container);
+        })();
       });
     }
     if (usersWithStatus.length === 0) {
@@ -4275,20 +4310,24 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     const headerEl = container.createEl("div", { cls: "collab-reminders-header" });
     headerEl.createEl("h3", { text: "Reminders" });
     const addBtn = headerEl.createEl("button", {
-      text: "+ New Reminder",
+      text: "New reminder +",
       cls: "collab-reminder-add-btn"
     });
     addBtn.addEventListener("click", () => {
-      new NewReminderModal(this.app, this.reminderManager, async () => {
-        await this.renderReminders(container);
+      new NewReminderModal(this.app, this.reminderManager, () => {
+        void (async () => {
+          await this.renderReminders(container);
+        })();
       }).open();
     });
     const pastDue = this.reminderManager.getPastDueReminders();
     if (pastDue.length > 0) {
       container.createEl("div", { text: `\u26A0\uFE0F Overdue (${pastDue.length})`, cls: "collab-reminder-section-header overdue" });
       for (const reminder of pastDue) {
-        this.renderReminderItem(container, reminder, async () => {
-          await this.renderReminders(container);
+        this.renderReminderItem(container, reminder, () => {
+          void (async () => {
+            await this.renderReminders(container);
+          })();
         });
       }
     }
@@ -4296,8 +4335,10 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     if (upcoming.length > 0) {
       container.createEl("div", { text: `Upcoming (${upcoming.length})`, cls: "collab-reminder-section-header" });
       for (const reminder of upcoming) {
-        this.renderReminderItem(container, reminder, async () => {
-          await this.renderReminders(container);
+        this.renderReminderItem(container, reminder, () => {
+          void (async () => {
+            await this.renderReminders(container);
+          })();
         });
       }
     }
@@ -4313,8 +4354,10 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         completedHeader.toggleClass("expanded", !completedContainer.hasClass("collapsed"));
       });
       for (const reminder of completed.slice(0, 10)) {
-        this.renderReminderItem(completedContainer, reminder, async () => {
-          await this.renderReminders(container);
+        this.renderReminderItem(completedContainer, reminder, () => {
+          void (async () => {
+            await this.renderReminders(container);
+          })();
         }, true);
       }
     }
@@ -4337,12 +4380,14 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       attr: { type: "checkbox" }
     });
     checkbox.checked = reminder.completed;
-    checkbox.addEventListener("change", async () => {
-      if (!reminder.completed) {
-        await this.reminderManager.completeReminder(reminder.id);
-        new import_obsidian4.Notice("Reminder completed! \u2713");
-      }
-      onUpdate();
+    checkbox.addEventListener("change", () => {
+      void (async () => {
+        if (!reminder.completed) {
+          await this.reminderManager.completeReminder(reminder.id);
+          new import_obsidian4.Notice("Reminder completed! \u2713");
+        }
+        onUpdate();
+      })();
     });
     const contentEl = itemEl.createEl("div", { cls: "collab-reminder-content" });
     contentEl.createEl("div", {
@@ -4362,7 +4407,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     }
     if (reminder.isGlobal) {
       contentEl.createEl("span", {
-        text: "\u{1F310} Team",
+        text: "Team \u{1F310}",
         cls: "collab-reminder-global-badge"
       });
     }
@@ -4392,10 +4437,12 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       attr: { title: "Delete" }
     });
     deleteBtn.setText("\u{1F5D1}\uFE0F");
-    deleteBtn.addEventListener("click", async (e) => {
+    deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      await this.reminderManager.deleteReminder(reminder.id);
-      onUpdate();
+      void (async () => {
+        await this.reminderManager.deleteReminder(reminder.id);
+        onUpdate();
+      })();
     });
   }
   renderTeamMember(container, user, isCurrentUser) {
@@ -4438,13 +4485,15 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
           this.app,
           "Remove team member?",
           `Are you sure you want to remove @${user.vaultName} from the team?`,
-          async () => {
-            await this.userManager.removeUser(user.vaultName);
-            const teamContainer = container.parentElement;
-            if (teamContainer) {
-              await this.renderTeam(teamContainer);
-            }
-            new import_obsidian4.Notice(`@${user.vaultName} has been removed from the team`);
+          () => {
+            void (async () => {
+              await this.userManager.removeUser(user.vaultName);
+              const teamContainer = container.parentElement;
+              if (teamContainer) {
+                await this.renderTeam(teamContainer);
+              }
+              new import_obsidian4.Notice(`@${user.vaultName} has been removed from the team`);
+            })();
           }
         ).open();
       });
@@ -4489,11 +4538,13 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       text: this.channelListCollapsed ? "\xBB" : "\xAB"
     });
     collapseBtn.setAttribute("title", this.channelListCollapsed ? "Expand channels" : "Collapse channels");
-    collapseBtn.addEventListener("click", async () => {
-      this.channelListCollapsed = !this.channelListCollapsed;
-      if (this.chatContainer) {
-        await this.renderChat(this.chatContainer);
-      }
+    collapseBtn.addEventListener("click", () => {
+      void (async () => {
+        this.channelListCollapsed = !this.channelListCollapsed;
+        if (this.chatContainer) {
+          await this.renderChat(this.chatContainer);
+        }
+      })();
     });
     if (!this.channelListCollapsed) {
       headerEl.createEl("span", { text: "Channels", cls: "collab-channel-header-text" });
@@ -4501,7 +4552,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         cls: "collab-channel-new-btn",
         text: "+"
       });
-      newBtn.setAttribute("title", "New channel or DM");
+      newBtn.setAttribute("title", "New channel or dm");
       newBtn.addEventListener("click", () => this.showNewChannelModal());
       const listEl = container.createEl("div", { cls: "collab-channel-items" });
       const channels = this.chatManager.getChannelsForUser(currentUser);
@@ -4551,11 +4602,13 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         text: unreadCount > 99 ? "99+" : String(unreadCount)
       });
     }
-    itemEl.addEventListener("click", async () => {
-      this.chatManager.setActiveChannel(channel.id);
-      if (this.chatContainer) {
-        await this.renderChat(this.chatContainer);
-      }
+    itemEl.addEventListener("click", () => {
+      void (async () => {
+        this.chatManager.setActiveChannel(channel.id);
+        if (this.chatContainer) {
+          await this.renderChat(this.chatContainer);
+        }
+      })();
     });
   }
   sortChannels(channels, currentUser) {
@@ -4604,7 +4657,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-chat-search-input",
       attr: {
         type: "text",
-        placeholder: "\u{1F50D} Search messages...",
+        placeholder: "Search messages... \u{1F50D}",
         value: this.chatSearchQuery
       }
     });
@@ -4643,12 +4696,14 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       text: "\u{1F504}",
       attr: { title: "Refresh chat" }
     });
-    refreshBtn.addEventListener("click", async () => {
-      await this.chatManager.loadChat();
-      if (this.chatContainer) {
-        await this.renderChat(this.chatContainer);
-      }
-      new import_obsidian4.Notice("Chat refreshed");
+    refreshBtn.addEventListener("click", () => {
+      void (async () => {
+        await this.chatManager.loadChat();
+        if (this.chatContainer) {
+          await this.renderChat(this.chatContainer);
+        }
+        new import_obsidian4.Notice("Chat refreshed");
+      })();
     });
     if (channel.type !== "general") {
       headerActionsEl.createEl("span", {
@@ -4661,15 +4716,17 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         text: isMuted ? "\u{1F507} Muted" : "\u{1F514}"
       });
       muteBtn.setAttribute("title", isMuted ? "Unmute channel" : "Mute notifications");
-      muteBtn.addEventListener("click", async () => {
-        await this.chatManager.toggleChannelMute(channel.id);
-        if (this.chatContainer) {
-          await this.renderChat(this.chatContainer);
-        }
+      muteBtn.addEventListener("click", () => {
+        void (async () => {
+          await this.chatManager.toggleChannelMute(channel.id);
+          if (this.chatContainer) {
+            await this.renderChat(this.chatContainer);
+          }
+        })();
       });
       const addBtn = headerActionsEl.createEl("button", {
         cls: "collab-header-btn",
-        text: "+ Add"
+        text: "Add +"
       });
       addBtn.addEventListener("click", () => this.showAddMemberModal(channel));
       if (this.chatManager.canDeleteChannel(channel.id, currentUser)) {
@@ -4734,11 +4791,13 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
             }
           ).open();
         } else {
-          new ConfirmActionModal(this.app, `Leave ${channelType}?`, `You will no longer see messages in this ${channelType}.`, async () => {
-            await this.chatManager.leaveChannel(channel.id, currentUser);
-            if (this.chatContainer) {
-              await this.renderChat(this.chatContainer);
-            }
+          new ConfirmActionModal(this.app, `Leave ${channelType}?`, `You will no longer see messages in this ${channelType}.`, () => {
+            void (async () => {
+              await this.chatManager.leaveChannel(channel.id, currentUser);
+              if (this.chatContainer) {
+                await this.renderChat(this.chatContainer);
+              }
+            })();
           }).open();
         }
       });
@@ -4813,7 +4872,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     }
     const jumpBtn = messagesWrapper.createEl("button", {
       cls: "collab-jump-to-bottom collab-hidden",
-      text: "\u2193 Jump to latest"
+      text: "Jump to latest \u2193 "
     });
     messagesEl.addEventListener("scroll", () => {
       const isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
@@ -4857,7 +4916,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-chat-input",
       attr: { placeholder: "Type a message... Use @name to mention someone" }
     });
-    textInput.addEventListener("paste", async (e) => {
+    textInput.addEventListener("paste", (e) => {
       var _a;
       const items = (_a = e.clipboardData) == null ? void 0 : _a.items;
       if (!items)
@@ -4867,12 +4926,14 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
           e.preventDefault();
           const blob = item.getAsFile();
           if (blob) {
-            const image = await this.chatManager.saveImageFromClipboard(blob);
-            if (image) {
-              this.pendingImages.push(image);
-              this.updateImagePreview(imagePreviewArea);
-              new import_obsidian4.Notice("Image added to message");
-            }
+            void (async () => {
+              const image = await this.chatManager.saveImageFromClipboard(blob);
+              if (image) {
+                this.pendingImages.push(image);
+                this.updateImagePreview(imagePreviewArea);
+                new import_obsidian4.Notice("Image added to message");
+              }
+            })();
           }
           break;
         }
@@ -4905,18 +4966,22 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       attr: { type: "file", accept: "image/*", style: "display: none" }
     });
     imageBtn.addEventListener("click", () => imageInput.click());
-    imageInput.addEventListener("change", async () => {
+    imageInput.addEventListener("change", () => {
       var _a;
       const file = (_a = imageInput.files) == null ? void 0 : _a[0];
       if (file) {
-        const image = await this.chatManager.saveImage(file);
-        if (image) {
-          this.pendingImages.push(image);
-          this.updateImagePreview(imagePreviewArea);
-          new import_obsidian4.Notice("Image added to message");
-        }
+        void (async () => {
+          const image = await this.chatManager.saveImage(file);
+          if (image) {
+            this.pendingImages.push(image);
+            this.updateImagePreview(imagePreviewArea);
+            new import_obsidian4.Notice("Image added to message");
+          }
+          imageInput.value = "";
+        })();
+      } else {
+        imageInput.value = "";
       }
-      imageInput.value = "";
     });
     const mentionBtn = leftButtons.createEl("button", {
       cls: "collab-chat-btn",
@@ -4965,21 +5030,29 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         await this.renderChat(this.chatContainer);
       }
     };
-    sendBtn.addEventListener("click", sendMessage);
-    textInput.addEventListener("input", async () => {
-      const activeChannelId = this.chatManager.getActiveChannelId();
-      await this.userManager.setTyping(activeChannelId);
-      if (this.typingTimeout) {
-        window.clearTimeout(this.typingTimeout);
-      }
-      this.typingTimeout = window.setTimeout(async () => {
-        await this.userManager.clearTyping();
-      }, 3e3);
+    sendBtn.addEventListener("click", () => {
+      void sendMessage();
     });
-    textInput.addEventListener("keydown", async (e) => {
+    textInput.addEventListener("input", () => {
+      void (async () => {
+        const activeChannelId = this.chatManager.getActiveChannelId();
+        await this.userManager.setTyping(activeChannelId);
+        if (this.typingTimeout) {
+          window.clearTimeout(this.typingTimeout);
+        }
+        this.typingTimeout = window.setTimeout(() => {
+          void (async () => {
+            await this.userManager.clearTyping();
+          })();
+        }, 3e3);
+      })();
+    });
+    textInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        await sendMessage();
+        void (async () => {
+          await sendMessage();
+        })();
       }
     });
   }
@@ -5011,18 +5084,22 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     this.typingIndicatorEl.appendText(" " + text);
   }
   showNewChannelModal() {
-    new NewChannelModal(this.app, this.userManager, this.chatManager, async (channel) => {
-      this.chatManager.setActiveChannel(channel.id);
-      if (this.chatContainer) {
-        await this.renderChat(this.chatContainer);
-      }
+    new NewChannelModal(this.app, this.userManager, this.chatManager, (channel) => {
+      void (async () => {
+        this.chatManager.setActiveChannel(channel.id);
+        if (this.chatContainer) {
+          await this.renderChat(this.chatContainer);
+        }
+      })();
     }).open();
   }
   showAddMemberModal(channel) {
-    new AddMemberModal(this.app, this.userManager, this.chatManager, channel, async () => {
-      if (this.chatContainer) {
-        await this.renderChat(this.chatContainer);
-      }
+    new AddMemberModal(this.app, this.userManager, this.chatManager, channel, () => {
+      void (async () => {
+        if (this.chatContainer) {
+          await this.renderChat(this.chatContainer);
+        }
+      })();
     }).open();
   }
   updateImagePreview(container) {
@@ -5061,7 +5138,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         cls: "collab-chat-message deleted"
       });
       msgEl2.createEl("div", {
-        text: "\u{1F5D1}\uFE0F This message was deleted",
+        text: "This message was deleted \u{1F5D1}\uFE0F",
         cls: "collab-chat-deleted-text"
       });
       return msgEl2;
@@ -5085,11 +5162,13 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
           cls: "collab-file-link",
           attr: { href: "#" }
         });
-        linkEl.addEventListener("click", async (e) => {
+        linkEl.addEventListener("click", (e) => {
           e.preventDefault();
           const file = this.app.vault.getAbstractFileByPath(filePath);
           if (file instanceof import_obsidian4.TFile) {
-            await this.app.workspace.getLeaf().openFile(file);
+            void (async () => {
+              await this.app.workspace.getLeaf().openFile(file);
+            })();
           }
         });
         lastIndex = match.index + match[0].length;
@@ -5133,7 +5212,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         });
       } else if (repliedMsg == null ? void 0 : repliedMsg.deleted) {
         const replyRefEl = msgEl.createEl("div", { cls: "collab-message-reply-ref deleted" });
-        replyRefEl.createEl("span", { text: "\u21A9 Original message was deleted" });
+        replyRefEl.createEl("span", { text: "Original message was deleted \u21A9 " });
       }
     }
     const contentEl = msgEl.createEl("div", { cls: "collab-chat-msg-content" });
@@ -5172,11 +5251,13 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
           reactionBtn.addClass("reacted");
         }
         reactionBtn.setAttribute("title", reaction.users.join(", "));
-        reactionBtn.addEventListener("click", async () => {
-          await this.chatManager.toggleReaction(msg.id, reaction.emoji);
-          if (this.chatContainer) {
-            await this.renderChat(this.chatContainer);
-          }
+        reactionBtn.addEventListener("click", () => {
+          void (async () => {
+            await this.chatManager.toggleReaction(msg.id, reaction.emoji);
+            if (this.chatContainer) {
+              await this.renderChat(this.chatContainer);
+            }
+          })();
         });
       }
     }
@@ -5217,11 +5298,13 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       editBtn.setText("\u270F\uFE0F");
       editBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        new EditMessageModal(this.app, msg.message, async (newContent) => {
-          await this.chatManager.editMessage(msg.id, newContent);
-          if (this.chatContainer) {
-            await this.renderChat(this.chatContainer);
-          }
+        new EditMessageModal(this.app, msg.message, (newContent) => {
+          void (async () => {
+            await this.chatManager.editMessage(msg.id, newContent);
+            if (this.chatContainer) {
+              await this.renderChat(this.chatContainer);
+            }
+          })();
         }).open();
       });
       const deleteBtn = actionsEl.createEl("button", {
@@ -5231,11 +5314,13 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       deleteBtn.setText("\u{1F5D1}\uFE0F");
       deleteBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        new ConfirmDeleteModal(this.app, async () => {
-          await this.chatManager.deleteMessage(msg.id);
-          if (this.chatContainer) {
-            await this.renderChat(this.chatContainer);
-          }
+        new ConfirmDeleteModal(this.app, () => {
+          void (async () => {
+            await this.chatManager.deleteMessage(msg.id);
+            if (this.chatContainer) {
+              await this.renderChat(this.chatContainer);
+            }
+          })();
         }).open();
       });
     }
@@ -5248,12 +5333,14 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       const btn = document.createElement("button");
       btn.className = "collab-reaction-picker-btn";
       btn.textContent = emoji;
-      btn.addEventListener("click", async () => {
-        await this.chatManager.toggleReaction(messageId, emoji);
-        picker.remove();
-        if (this.chatContainer) {
-          await this.renderChat(this.chatContainer);
-        }
+      btn.addEventListener("click", () => {
+        void (async () => {
+          await this.chatManager.toggleReaction(messageId, emoji);
+          picker.remove();
+          if (this.chatContainer) {
+            await this.renderChat(this.chatContainer);
+          }
+        })();
       });
       picker.appendChild(btn);
     }
@@ -5301,9 +5388,11 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
           text: `\u{1F4C4} ${filePath}`,
           cls: "collab-chat-file-link"
         });
-        link.addEventListener("click", async (e) => {
+        link.addEventListener("click", (e) => {
           e.preventDefault();
-          await this.openFile(filePath);
+          void (async () => {
+            await this.openFile(filePath);
+          })();
         });
       } else if (matchedText.startsWith("@#")) {
         const channelName = matchedText.substring(2);
@@ -5311,7 +5400,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
           text: matchedText,
           cls: "collab-chat-channel-mention"
         });
-        channelMentionEl.addEventListener("click", async (e) => {
+        channelMentionEl.addEventListener("click", (e) => {
           e.preventDefault();
           e.stopPropagation();
           const currentUser = this.userManager.getCurrentUser();
@@ -5320,8 +5409,11 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
             const channel = channels.find((ch) => ch.name.toLowerCase() === channelName.toLowerCase());
             if (channel) {
               this.chatManager.setActiveChannel(channel.id);
-              if (this.chatContainer) {
-                await this.renderChat(this.chatContainer);
+              const container2 = this.chatContainer;
+              if (container2) {
+                void (async () => {
+                  await this.renderChat(container2);
+                })();
               }
             }
           }
@@ -5431,6 +5523,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
    */
   async refreshMessagesOnly() {
     var _a;
+    await Promise.resolve();
     if (!this.messagesContainer)
       return;
     const currentUser = this.userManager.getCurrentUser();
@@ -5631,9 +5724,11 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       text: `\u{1F4C4} ${fileName}:${mention.line + 1}`,
       cls: "collab-file-link"
     });
-    link.addEventListener("click", async (e) => {
+    link.addEventListener("click", (e) => {
       e.preventDefault();
-      await this.openFileAtLine(mention.file, mention.line);
+      void (async () => {
+        await this.openFileAtLine(mention.file, mention.line);
+      })();
     });
     if (type === "inbox" && !mention.read) {
       const actionsEl = itemEl.createEl("div", { cls: "collab-mention-actions" });
@@ -5642,14 +5737,16 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         cls: "collab-btn-icon",
         attr: { title: "Mark as read" }
       });
-      markReadBtn.addEventListener("click", async (e) => {
+      markReadBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        await this.mentionParser.markAsRead(mention.id);
-        itemEl.removeClass("unread");
-        markReadBtn.remove();
-        if (this.onBadgeUpdate) {
-          this.onBadgeUpdate();
-        }
+        void (async () => {
+          await this.mentionParser.markAsRead(mention.id);
+          itemEl.removeClass("unread");
+          markReadBtn.remove();
+          if (this.onBadgeUpdate) {
+            this.onBadgeUpdate();
+          }
+        })();
       });
     }
     if (mention.replies && mention.replies.length > 0) {
@@ -5828,7 +5925,7 @@ var NewChannelModal = class extends import_obsidian4.Modal {
       this.activeTab = "group";
       formEl.createEl("label", { text: "Channel name" });
       const nameInput = formEl.createEl("input", {
-        attr: { type: "text", placeholder: "e.g., project-alpha" }
+        attr: { type: "text", placeholder: "Example: project-alpha" }
       });
       formEl.createEl("label", { text: "Add members" });
       const membersContainer = formEl.createEl("div", { cls: "collab-member-select" });
@@ -5857,7 +5954,7 @@ var NewChannelModal = class extends import_obsidian4.Modal {
         text: "Create channel",
         cls: "collab-create-btn"
       });
-      createBtn.addEventListener("click", async () => {
+      createBtn.addEventListener("click", () => {
         const name = nameInput.value.trim();
         if (!name) {
           new import_obsidian4.Notice("Please enter a channel name");
@@ -5865,9 +5962,11 @@ var NewChannelModal = class extends import_obsidian4.Modal {
         }
         if (!currentUser)
           return;
-        const channel = await this.chatManager.createGroupChannel(name, selectedMembers, currentUser.vaultName);
-        this.close();
-        this.onCreated(channel);
+        void (async () => {
+          const channel = await this.chatManager.createGroupChannel(name, selectedMembers, currentUser.vaultName);
+          this.close();
+          this.onCreated(channel);
+        })();
       });
     };
     const renderDMForm = () => {
@@ -5886,13 +5985,15 @@ var NewChannelModal = class extends import_obsidian4.Modal {
         text: "Start conversation",
         cls: "collab-create-btn"
       });
-      startBtn.addEventListener("click", async () => {
+      startBtn.addEventListener("click", () => {
         const selectedUser = userSelect.value;
         if (!selectedUser || !currentUser)
           return;
-        const channel = await this.chatManager.startDM(currentUser.vaultName, selectedUser);
-        this.close();
-        this.onCreated(channel);
+        void (async () => {
+          const channel = await this.chatManager.startDM(currentUser.vaultName, selectedUser);
+          this.close();
+          this.onCreated(channel);
+        })();
       });
     };
     groupTab.addEventListener("click", () => {
@@ -5931,7 +6032,7 @@ var AddMemberModal = class extends import_obsidian4.Modal {
     });
     if (this.channel.type === "dm") {
       contentEl.createEl("p", {
-        text: "Adding a member will convert this DM to a group channel.",
+        text: "Adding a member will convert this dm to a group channel.",
         cls: "collab-warning-text"
       });
     }
@@ -5951,13 +6052,15 @@ var AddMemberModal = class extends import_obsidian4.Modal {
       text: "Add member",
       cls: "collab-create-btn"
     });
-    addBtn.addEventListener("click", async () => {
+    addBtn.addEventListener("click", () => {
       const selectedUser = userSelect.value;
       if (!selectedUser || !currentUser)
         return;
-      await this.chatManager.addMemberToChannel(this.channel.id, selectedUser, currentUser.vaultName);
-      this.close();
-      this.onAdded();
+      void (async () => {
+        await this.chatManager.addMemberToChannel(this.channel.id, selectedUser, currentUser.vaultName);
+        this.close();
+        this.onAdded();
+      })();
     });
   }
   onClose() {
@@ -6058,17 +6161,21 @@ var DeleteChannelModal = class extends import_obsidian4.Modal {
       text: "Delete",
       cls: "collab-confirm-action-btn collab-delete-only-btn"
     });
-    deleteOnlyBtn.addEventListener("click", async () => {
+    deleteOnlyBtn.addEventListener("click", () => {
       this.close();
-      await this.onDeleteOnly();
+      void (async () => {
+        await this.onDeleteOnly();
+      })();
     });
     const exportBtn = buttonRow.createEl("button", {
-      text: "Export & Delete",
+      text: "Export and delete",
       cls: "collab-confirm-action-btn collab-export-delete-btn"
     });
-    exportBtn.addEventListener("click", async () => {
+    exportBtn.addEventListener("click", () => {
       this.close();
-      await this.onExportAndDelete();
+      void (async () => {
+        await this.onExportAndDelete();
+      })();
     });
   }
   onClose() {
@@ -6105,17 +6212,21 @@ var LeaveAsLastMemberModal = class extends import_obsidian4.Modal {
       text: "Leave",
       cls: "collab-confirm-action-btn collab-delete-only-btn"
     });
-    leaveOnlyBtn.addEventListener("click", async () => {
+    leaveOnlyBtn.addEventListener("click", () => {
       this.close();
-      await this.onLeaveOnly();
+      void (async () => {
+        await this.onLeaveOnly();
+      })();
     });
     const exportBtn = buttonRow.createEl("button", {
-      text: "Export & Leave",
+      text: "Export and leave",
       cls: "collab-confirm-action-btn collab-export-delete-btn"
     });
-    exportBtn.addEventListener("click", async () => {
+    exportBtn.addEventListener("click", () => {
       this.close();
-      await this.onExportAndLeave();
+      void (async () => {
+        await this.onExportAndLeave();
+      })();
     });
   }
   onClose() {
@@ -6145,7 +6256,7 @@ var NewReminderModal = class extends import_obsidian4.Modal {
       cls: "collab-reminder-date-input",
       attr: {
         type: "text",
-        placeholder: "e.g., tomorrow 3pm, in 2 hours, next monday"
+        placeholder: "Example: tomorrow 3pm, in 2 hours, next monday"
       }
     });
     const previewEl = contentEl.createEl("div", { cls: "collab-reminder-date-preview" });
@@ -6178,9 +6289,9 @@ var NewReminderModal = class extends import_obsidian4.Modal {
     });
     contentEl.createEl("label", { text: "Priority" });
     const prioritySelect = contentEl.createEl("select", { cls: "collab-reminder-priority-select" });
-    prioritySelect.createEl("option", { value: "low", text: "\u{1F535} Low" });
-    prioritySelect.createEl("option", { value: "normal", text: "\u26AA Normal" });
-    prioritySelect.createEl("option", { value: "high", text: "\u{1F534} High" });
+    prioritySelect.createEl("option", { value: "low", text: "Low priority" }).prepend("\u{1F535} ");
+    prioritySelect.createEl("option", { value: "normal", text: "Normal priority" }).prepend("\u26AA ");
+    prioritySelect.createEl("option", { value: "high", text: "High priority" }).prepend("\u{1F534} ");
     prioritySelect.value = "normal";
     const globalRow = contentEl.createEl("div", { cls: "collab-reminder-global-row" });
     const globalCheckbox = globalRow.createEl("input", {
@@ -6202,7 +6313,7 @@ var NewReminderModal = class extends import_obsidian4.Modal {
       text: "Create reminder",
       cls: "collab-reminder-create-btn"
     });
-    createBtn.addEventListener("click", async () => {
+    createBtn.addEventListener("click", () => {
       const message = messageInput.value.trim();
       if (!message) {
         new import_obsidian4.Notice("Please enter a reminder message");
@@ -6215,10 +6326,12 @@ var NewReminderModal = class extends import_obsidian4.Modal {
       }
       const priority = prioritySelect.value;
       const isGlobal = globalCheckbox.checked;
-      await this.reminderManager.createReminder(message, dueDate, priority, void 0, isGlobal);
-      new import_obsidian4.Notice(`Reminder set for ${ReminderManager.formatDueDate(dueDate.toISOString())}${isGlobal ? " (shared with team)" : ""}`);
-      this.close();
-      this.onCreated();
+      void (async () => {
+        await this.reminderManager.createReminder(message, dueDate, priority, void 0, isGlobal);
+        new import_obsidian4.Notice(`Reminder set for ${ReminderManager.formatDueDate(dueDate.toISOString())}${isGlobal ? " (shared with team)" : ""}`);
+        this.close();
+        this.onCreated();
+      })();
     });
     setTimeout(() => messageInput.focus(), 10);
   }
@@ -6234,7 +6347,7 @@ var NewReminderModal = class extends import_obsidian4.Modal {
       previewEl.removeClass("invalid");
       previewEl.addClass("valid");
     } else {
-      previewEl.setText("\u274C Could not parse date");
+      previewEl.setText("Could not parse date \u274C");
       previewEl.removeClass("valid");
       previewEl.addClass("invalid");
     }
@@ -6283,9 +6396,9 @@ var EditReminderModal = class extends import_obsidian4.Modal {
     });
     contentEl.createEl("label", { text: "Priority" });
     const prioritySelect = contentEl.createEl("select", { cls: "collab-reminder-priority-select" });
-    prioritySelect.createEl("option", { value: "low", text: "\u{1F535} Low" });
-    prioritySelect.createEl("option", { value: "normal", text: "\u26AA Normal" });
-    prioritySelect.createEl("option", { value: "high", text: "\u{1F534} High" });
+    prioritySelect.createEl("option", { value: "low", text: "Low priority" }).prepend("\u{1F535} ");
+    prioritySelect.createEl("option", { value: "normal", text: "Normal priority" }).prepend("\u26AA ");
+    prioritySelect.createEl("option", { value: "high", text: "High priority" }).prepend("\u{1F534} ");
     prioritySelect.value = this.reminder.priority;
     const buttonRow = contentEl.createEl("div", { cls: "collab-reminder-buttons" });
     const cancelBtn = buttonRow.createEl("button", {
@@ -6297,7 +6410,7 @@ var EditReminderModal = class extends import_obsidian4.Modal {
       text: "Save",
       cls: "collab-reminder-create-btn"
     });
-    saveBtn.addEventListener("click", async () => {
+    saveBtn.addEventListener("click", () => {
       const message = messageInput.value.trim();
       if (!message) {
         new import_obsidian4.Notice("Please enter a reminder message");
@@ -6312,14 +6425,16 @@ var EditReminderModal = class extends import_obsidian4.Modal {
         }
       }
       const priority = prioritySelect.value;
-      await this.reminderManager.editReminder(this.reminder.id, {
-        message,
-        dueDate: newDueDate.toISOString(),
-        priority
-      });
-      new import_obsidian4.Notice("Reminder updated");
-      this.close();
-      this.onUpdated();
+      void (async () => {
+        await this.reminderManager.editReminder(this.reminder.id, {
+          message,
+          dueDate: newDueDate.toISOString(),
+          priority
+        });
+        new import_obsidian4.Notice("Reminder updated");
+        this.close();
+        this.onUpdated();
+      })();
     });
   }
   onClose() {
@@ -6355,19 +6470,21 @@ var SnoozeModal = class extends import_obsidian4.Modal {
         text: option.label,
         cls: "collab-snooze-option-btn"
       });
-      btn.addEventListener("click", async () => {
-        if (option.minutes === -1) {
-          const tomorrow = new Date();
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          tomorrow.setHours(9, 0, 0, 0);
-          const minutesUntil = Math.round((tomorrow.getTime() - Date.now()) / 6e4);
-          await this.reminderManager.snoozeReminder(this.reminderId, minutesUntil);
-        } else {
-          await this.reminderManager.snoozeReminder(this.reminderId, option.minutes);
-        }
-        new import_obsidian4.Notice(`Reminder snoozed for ${option.label}`);
-        this.close();
-        this.onSnoozed();
+      btn.addEventListener("click", () => {
+        void (async () => {
+          if (option.minutes === -1) {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(9, 0, 0, 0);
+            const minutesUntil = Math.round((tomorrow.getTime() - Date.now()) / 6e4);
+            await this.reminderManager.snoozeReminder(this.reminderId, minutesUntil);
+          } else {
+            await this.reminderManager.snoozeReminder(this.reminderId, option.minutes);
+          }
+          new import_obsidian4.Notice(`Reminder snoozed for ${option.label}`);
+          this.close();
+          this.onSnoozed();
+        })();
       });
     }
     const cancelBtn = contentEl.createEl("button", {
@@ -6398,7 +6515,7 @@ var ReminderNotificationModal = class extends import_obsidian4.Modal {
     headerEl.createEl("span", { text: "\u23F0", cls: "collab-reminder-notif-icon" });
     headerEl.createEl("h2", { text: "Reminder" });
     if (this.reminder.isGlobal) {
-      headerEl.createEl("span", { text: "\u{1F310} Team", cls: "collab-reminder-notif-global-badge" });
+      headerEl.createEl("span", { text: "Team \u{1F310}", cls: "collab-reminder-notif-global-badge" });
     }
     contentEl.createEl("div", {
       text: this.reminder.message,
@@ -6427,23 +6544,27 @@ var ReminderNotificationModal = class extends import_obsidian4.Modal {
         text: option.label,
         cls: "collab-reminder-notif-snooze-btn"
       });
-      snoozeBtn.addEventListener("click", async () => {
-        await this.reminderManager.snoozeReminder(this.reminder.id, option.minutes);
-        new import_obsidian4.Notice(`Snoozed for ${option.label}`);
-        this.close();
-        this.onAction();
+      snoozeBtn.addEventListener("click", () => {
+        void (async () => {
+          await this.reminderManager.snoozeReminder(this.reminder.id, option.minutes);
+          new import_obsidian4.Notice(`Snoozed for ${option.label}`);
+          this.close();
+          this.onAction();
+        })();
       });
     }
     const buttonRow = actionsEl.createEl("div", { cls: "collab-reminder-notif-buttons" });
     const completeBtn = buttonRow.createEl("button", {
-      text: "\u2713 Mark complete",
+      text: "Mark complete \u2713",
       cls: "collab-reminder-notif-complete-btn"
     });
-    completeBtn.addEventListener("click", async () => {
-      await this.reminderManager.completeReminder(this.reminder.id);
-      new import_obsidian4.Notice("Reminder completed!");
-      this.close();
-      this.onAction();
+    completeBtn.addEventListener("click", () => {
+      void (async () => {
+        await this.reminderManager.completeReminder(this.reminder.id);
+        new import_obsidian4.Notice("Reminder completed!");
+        this.close();
+        this.onAction();
+      })();
     });
     const dismissBtn = buttonRow.createEl("button", {
       text: "Dismiss",
@@ -6526,7 +6647,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
         // Callback to update badge when read status changes
       )
     );
-    this.ribbonIconEl = this.addRibbonIcon("at-sign", "Collab Mentions", async () => {
+    this.ribbonIconEl = this.addRibbonIcon("at-sign", "Collab mentions", async () => {
       if (!this.userManager.isRegistered()) {
         new RegisterModal(
           this.app,
@@ -6548,7 +6669,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     });
     this.addCommand({
       id: "register-user",
-      name: "Register / Manage user",
+      name: "Register / manage user",
       callback: () => {
         if (this.userManager.isRegistered()) {
           new UserManagementModal(
@@ -6615,94 +6736,98 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
           if (followUpTimer !== null) {
             window.clearTimeout(followUpTimer);
           }
-          followUpTimer = window.setTimeout(async () => {
-            if (pendingFiles.size > 0) {
-              console.debug("[Collab-Mentions] Follow-up processing", pendingFiles.size, "files");
-              for (const [path, pendingFile] of pendingFiles) {
-                await processFileForMentions(pendingFile);
+          followUpTimer = window.setTimeout(() => {
+            void (async () => {
+              if (pendingFiles.size > 0) {
+                console.debug("[Collab-Mentions] Follow-up processing", pendingFiles.size, "files");
+                for (const [path, pendingFile] of pendingFiles) {
+                  await processFileForMentions(pendingFile);
+                }
+                pendingFiles.clear();
               }
-              pendingFiles.clear();
-            }
-            followUpTimer = null;
+              followUpTimer = null;
+            })();
           }, 1500);
         }
       })
     );
     this.addSettingTab(new CollabMentionsSettingTab(this.app, this));
     if (this.userManager.isRegistered() && this.settings.enableNotifications) {
-      setTimeout(async () => {
-        await this.mentionParser.loadMentions();
-        await this.chatManager.loadChat();
-        await this.reminderManager.loadReminders();
-        const currentUser = this.userManager.getCurrentUser();
-        if (!currentUser)
-          return;
-        const username = currentUser.vaultName;
-        if (!this.settings.notifiedMentionIdsByUser[username]) {
-          this.settings.notifiedMentionIdsByUser[username] = [];
-        }
-        if (!this.settings.lastNotifiedChatTimestampByUser[username]) {
-          this.settings.lastNotifiedChatTimestampByUser[username] = {};
-        }
-        const userNotifiedMentions = this.settings.notifiedMentionIdsByUser[username];
-        const userChatTimestamps = this.settings.lastNotifiedChatTimestampByUser[username];
-        const unreadMentions = this.mentionParser.getUnreadMentions();
-        const notNotifiedYet = unreadMentions.filter(
-          (m) => !userNotifiedMentions.includes(m.id)
-        );
-        if (notNotifiedYet.length > 0) {
-          this.notifier.showStartupNotifications(notNotifiedYet);
-          notNotifiedYet.forEach((m) => {
-            if (!userNotifiedMentions.includes(m.id)) {
-              userNotifiedMentions.push(m.id);
-            }
-          });
-          const existingIds = new Set(this.mentionParser.getAllMentionIds());
-          this.settings.notifiedMentionIdsByUser[username] = userNotifiedMentions.filter(
-            (id) => existingIds.has(id)
-          );
-          await this.saveSettings();
-        }
-        const channels = this.chatManager.getChannelsForUser(username);
-        let newUnreadCount = 0;
-        for (const channel of channels) {
-          const lastNotified = userChatTimestamps[channel.id];
-          const lastNotifiedTime = lastNotified ? new Date(lastNotified).getTime() : 0;
-          const messages = this.chatManager.getMessages(channel.id);
-          const newMessages = messages.filter(
-            (m) => new Date(m.timestamp).getTime() > lastNotifiedTime && m.from !== username && m.from !== "system" && !m.deleted
-          );
-          newUnreadCount += newMessages.length;
-          if (messages.length > 0) {
-            const latestMsg = messages[messages.length - 1];
-            userChatTimestamps[channel.id] = latestMsg.timestamp;
+      setTimeout(() => {
+        void (async () => {
+          await this.mentionParser.loadMentions();
+          await this.chatManager.loadChat();
+          await this.reminderManager.loadReminders();
+          const currentUser = this.userManager.getCurrentUser();
+          if (!currentUser)
+            return;
+          const username = currentUser.vaultName;
+          if (!this.settings.notifiedMentionIdsByUser[username]) {
+            this.settings.notifiedMentionIdsByUser[username] = [];
           }
-        }
-        if (newUnreadCount > 0) {
-          this.showCenteredNotification(
-            "\u{1F4AC} Unread Messages",
-            `You have ${newUnreadCount} unread chat message${newUnreadCount > 1 ? "s" : ""}`,
-            () => {
-              this.activateMentionPanel({ tab: "chat" });
-            }
-          );
-          await this.saveSettings();
-        }
-        const dueReminders = await this.reminderManager.checkDueReminders();
-        if (dueReminders.length > 0) {
-          console.debug("[Collab-Mentions] Due reminders on startup:", dueReminders.length);
-          for (const reminder of dueReminders) {
-            this.notifiedReminderIds.add(reminder.id);
+          if (!this.settings.lastNotifiedChatTimestampByUser[username]) {
+            this.settings.lastNotifiedChatTimestampByUser[username] = {};
           }
-        }
-        this.reminderManager.startPeriodicCheck(5e3);
-        if (this.settings.autoCleanup) {
-          await this.mentionParser.autoCleanupMentions(
-            this.settings.maxMentionsPerUser,
-            this.settings.cleanupIntervalHours
+          const userNotifiedMentions = this.settings.notifiedMentionIdsByUser[username];
+          const userChatTimestamps = this.settings.lastNotifiedChatTimestampByUser[username];
+          const unreadMentions = this.mentionParser.getUnreadMentions();
+          const notNotifiedYet = unreadMentions.filter(
+            (m) => !userNotifiedMentions.includes(m.id)
           );
-        }
-        this.updateRibbonBadge();
+          if (notNotifiedYet.length > 0) {
+            this.notifier.showStartupNotifications(notNotifiedYet);
+            notNotifiedYet.forEach((m) => {
+              if (!userNotifiedMentions.includes(m.id)) {
+                userNotifiedMentions.push(m.id);
+              }
+            });
+            const existingIds = new Set(this.mentionParser.getAllMentionIds());
+            this.settings.notifiedMentionIdsByUser[username] = userNotifiedMentions.filter(
+              (id) => existingIds.has(id)
+            );
+            await this.saveSettings();
+          }
+          const channels = this.chatManager.getChannelsForUser(username);
+          let newUnreadCount = 0;
+          for (const channel of channels) {
+            const lastNotified = userChatTimestamps[channel.id];
+            const lastNotifiedTime = lastNotified ? new Date(lastNotified).getTime() : 0;
+            const messages = this.chatManager.getMessages(channel.id);
+            const newMessages = messages.filter(
+              (m) => new Date(m.timestamp).getTime() > lastNotifiedTime && m.from !== username && m.from !== "system" && !m.deleted
+            );
+            newUnreadCount += newMessages.length;
+            if (messages.length > 0) {
+              const latestMsg = messages[messages.length - 1];
+              userChatTimestamps[channel.id] = latestMsg.timestamp;
+            }
+          }
+          if (newUnreadCount > 0) {
+            this.showCenteredNotification(
+              "\u{1F4AC} Unread Messages",
+              `You have ${newUnreadCount} unread chat message${newUnreadCount > 1 ? "s" : ""}`,
+              () => {
+                void this.activateMentionPanel({ tab: "chat" });
+              }
+            );
+            await this.saveSettings();
+          }
+          const dueReminders = await this.reminderManager.checkDueReminders();
+          if (dueReminders.length > 0) {
+            console.debug("[Collab-Mentions] Due reminders on startup:", dueReminders.length);
+            for (const reminder of dueReminders) {
+              this.notifiedReminderIds.add(reminder.id);
+            }
+          }
+          this.reminderManager.startPeriodicCheck(5e3);
+          if (this.settings.autoCleanup) {
+            await this.mentionParser.autoCleanupMentions(
+              this.settings.maxMentionsPerUser,
+              this.settings.cleanupIntervalHours
+            );
+          }
+          this.updateRibbonBadge();
+        })();
       }, 3e3);
     }
     if (this.settings.enableFileWatcher && this.userManager.isRegistered()) {
@@ -6720,13 +6845,15 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       }, 2e3);
     }
   }
-  async onunload() {
+  onunload() {
     console.debug("Unloading Collab Mentions plugin");
     this.stopFileWatcher();
     this.stopHeartbeat();
     this.stopCleanupInterval();
     this.reminderManager.stopPeriodicCheck();
-    await this.userManager.clearPresence();
+    void (async () => {
+      await this.userManager.clearPresence();
+    })();
   }
   /**
    * Called after a user successfully registers - starts file watcher and heartbeat
@@ -6784,9 +6911,9 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       const view = leaf.view;
       if (view) {
         if (options == null ? void 0 : options.channelId) {
-          view.switchToChannel(options.channelId);
+          void view.switchToChannel(options.channelId);
         } else if (options == null ? void 0 : options.tab) {
-          view.switchToTab(options.tab);
+          void view.switchToTab(options.tab);
         }
       }
     }
@@ -6813,9 +6940,9 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       const view = leaf.view;
       if (view) {
         if (smartRefresh && view.refreshChat) {
-          view.refreshChat();
+          void view.refreshChat();
         } else if (view.render) {
-          view.render();
+          void view.render();
         }
       }
     }
@@ -7209,26 +7336,28 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       return;
     }
     console.debug("Starting mentions file watcher...");
-    this.fileWatcherInterval = window.setInterval(async () => {
-      await this.checkForMentionsFileChanges();
-      await this.checkForChatFileChanges();
-      await this.checkForUsersFileChanges();
-      await this.checkForRemindersFileChanges();
-      await this.userManager.loadPresence();
+    this.fileWatcherInterval = window.setInterval(() => {
+      void (async () => {
+        await this.checkForMentionsFileChanges();
+        await this.checkForChatFileChanges();
+        await this.checkForUsersFileChanges();
+        await this.checkForRemindersFileChanges();
+        await this.userManager.loadPresence();
+      })();
     }, 3e3);
-    this.getMentionsFileHash().then((hash) => {
+    void this.getMentionsFileHash().then((hash) => {
       this.lastMentionsFileHash = hash;
       console.debug("[Collab-Mentions] Initialized mentions hash");
     });
-    this.getChatFileHash().then((hash) => {
+    void this.getChatFileHash().then((hash) => {
       this.lastChatFileHash = hash;
       console.debug("[Collab-Mentions] Initialized chat hash");
     });
-    this.getUsersFileHash().then((hash) => {
+    void this.getUsersFileHash().then((hash) => {
       this.lastUsersFileHash = hash;
       console.debug("[Collab-Mentions] Initialized users hash");
     });
-    this.getRemindersFileHash().then((hash) => {
+    void this.getRemindersFileHash().then((hash) => {
       this.lastRemindersFileHash = hash;
       console.debug("[Collab-Mentions] Initialized reminders hash");
     });
@@ -7390,9 +7519,11 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       const activeFile = this.app.workspace.getActiveFile();
       return activeFile == null ? void 0 : activeFile.path;
     };
-    this.userManager.recordFileActivity(getActiveFile());
-    this.heartbeatInterval = window.setInterval(async () => {
-      await this.userManager.updateHeartbeat(getActiveFile());
+    void this.userManager.recordFileActivity(getActiveFile());
+    this.heartbeatInterval = window.setInterval(() => {
+      void (async () => {
+        await this.userManager.updateHeartbeat(getActiveFile());
+      })();
     }, 1e4);
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", async () => {
@@ -7552,7 +7683,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian5.Setting(containerEl).setName("Collab Mentions settings").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("General").setHeading();
     const currentUser = this.plugin.userManager.getCurrentUser();
     const isAdmin = this.plugin.userManager.isCurrentUserAdmin();
     if (currentUser) {
@@ -7646,9 +7777,9 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
     let cleanupScope = "my-received";
     let cleanupDays = 30;
     new import_obsidian5.Setting(containerEl).setName("Cleanup scope").setDesc("Choose which mentions to clean up" + (isAdmin ? "" : " (Admin-only options hidden)")).addDropdown((dropdown) => {
-      dropdown.addOption("my-received", "My received mentions (Inbox)").addOption("my-sent", "My sent mentions");
+      dropdown.addOption("my-received", "My received mentions (inbox)").addOption("my-sent", "My sent mentions");
       if (isAdmin) {
-        dropdown.addOption("all", "All mentions (everyone) [Admin]");
+        dropdown.addOption("all", "All mentions (everyone) [admin]");
       }
       dropdown.setValue(cleanupScope).onChange((value) => {
         cleanupScope = value;
@@ -7678,7 +7809,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
       })
     );
     if (isAdmin) {
-      new import_obsidian5.Setting(containerEl).setName("Force auto-cleanup now").setDesc("[Admin] Run auto-cleanup immediately (keeps last N per user for everyone)").addButton(
+      new import_obsidian5.Setting(containerEl).setName("Force auto-cleanup now").setDesc("[Admin] run auto-cleanup immediately (keeps last n per user for everyone)").addButton(
         (btn) => btn.setButtonText("Run auto-cleanup").onClick(async () => {
           const removed = await this.plugin.mentionParser.autoCleanupMentions(
             this.plugin.settings.maxMentionsPerUser,

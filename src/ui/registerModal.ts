@@ -61,7 +61,7 @@ export class RegisterModal extends Modal {
     onOpen(): void {
         const { contentEl } = this;
 
-        new Setting(contentEl).setName('👤 Register for Collab Mentions').setHeading();
+        new Setting(contentEl).setName('Register for collab mentions 👤').setHeading();
 
         const localId = this.userManager.getLocalIdentifier();
         const os = this.userManager.getOS();
@@ -80,7 +80,7 @@ export class RegisterModal extends Modal {
 
         new Setting(contentEl)
             .setName('Your display name')
-            .setDesc('This is how others will @mention you (e.g., @Albert)')
+            .setDesc('This is how others will @mention you, for example @Albert')
             .addText(text => text
                 .setPlaceholder('Enter your name')
                 .onChange(value => {
@@ -165,7 +165,7 @@ export class UserManagementModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
 
-        new Setting(contentEl).setName('👥 Team members').setHeading();
+        new Setting(contentEl).setName('Team members 👥').setHeading();
 
         const currentUser = this.userManager.getCurrentUser();
         const allUsers = this.userManager.getAllUsers();
@@ -175,7 +175,7 @@ export class UserManagementModal extends Modal {
             const userInfo = contentEl.createEl('p', { cls: 'collab-current-user' });
             userInfo.createEl('span', { text: `You are registered as: @${currentUser.vaultName}` });
             if (isAdmin) {
-                userInfo.createEl('span', { text: ' (Admin)', cls: 'collab-admin-badge' });
+                userInfo.createEl('span', { text: ' — admin', cls: 'collab-admin-badge' });
             }
         }
 
@@ -253,14 +253,16 @@ export class UserManagementModal extends Modal {
                             text: user.isAdmin ? 'Demote' : 'Promote',
                             cls: 'collab-action-btn'
                         });
-                        adminBtn.addEventListener('click', async () => {
-                            if (user.isAdmin) {
-                                await this.userManager.demoteFromAdmin(user.vaultName);
-                            } else {
-                                await this.userManager.promoteToAdmin(user.vaultName);
-                            }
-                            this.render();
-                            this.onUpdate();
+                        adminBtn.addEventListener('click', () => {
+                            void (async () => {
+                                if (user.isAdmin) {
+                                    await this.userManager.demoteFromAdmin(user.vaultName);
+                                } else {
+                                    await this.userManager.promoteToAdmin(user.vaultName);
+                                }
+                                this.render();
+                                this.onUpdate();
+                            })();
                         });
                     }
 
@@ -275,10 +277,12 @@ export class UserManagementModal extends Modal {
                                 this.app,
                                 'Remove team member?',
                                 `Are you sure you want to remove "${user.vaultName}" from the team?`,
-                                async () => {
-                                    await this.userManager.removeUser(user.vaultName);
-                                    this.render();
-                                    this.onUpdate();
+                                () => {
+                                    void (async () => {
+                                        await this.userManager.removeUser(user.vaultName);
+                                        this.render();
+                                        this.onUpdate();
+                                    })();
                                 }
                             ).open();
                         });
@@ -299,10 +303,12 @@ export class UserManagementModal extends Modal {
                             this.app,
                             'Unregister from machine?',
                             `Are you sure you want to unregister "${currentUser.vaultName}" from this machine?`,
-                            async () => {
-                                await this.userManager.unregisterCurrentUser();
-                                this.onUpdate();
-                                this.close();
+                            () => {
+                                void (async () => {
+                                    await this.userManager.unregisterCurrentUser();
+                                    this.onUpdate();
+                                    this.close();
+                                })();
                             }
                         ).open();
                     })

@@ -76,6 +76,7 @@ export class MentionPanelView extends ItemView {
     }
 
     async render(): Promise<void> {
+        await Promise.resolve();
         const container = this.containerEl.children[1];
         container.empty();
 
@@ -147,19 +148,25 @@ export class MentionPanelView extends ItemView {
             void this.renderSent(contentEl);
         });
 
-        teamTab.addEventListener('click', async () => {
+        teamTab.addEventListener('click', () => {
             setActiveTab(teamTab, 'team');
-            await this.renderTeam(contentEl);
+            void (async () => {
+                await this.renderTeam(contentEl);
+            })();
         });
 
-        chatTab.addEventListener('click', async () => {
+        chatTab.addEventListener('click', () => {
             setActiveTab(chatTab, 'chat');
-            await this.renderChat(contentEl);
+            void (async () => {
+                await this.renderChat(contentEl);
+            })();
         });
 
-        remindersTab.addEventListener('click', async () => {
+        remindersTab.addEventListener('click', () => {
             setActiveTab(remindersTab, 'reminders');
-            await this.renderReminders(contentEl);
+            void (async () => {
+                await this.renderReminders(contentEl);
+            })();
         });
 
         // Initial render - restore to previously active tab
@@ -189,6 +196,7 @@ export class MentionPanelView extends ItemView {
     }
 
     private async renderInbox(container: HTMLElement): Promise<void> {
+        await Promise.resolve();
         container.empty();
         container.removeClass('collab-chat-container');  // Remove chat-specific layout
 
@@ -223,10 +231,12 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-btn-small collab-refresh-btn',
             attr: { title: 'Refresh' }
         });
-        refreshBtn.addEventListener('click', async () => {
-            await this.mentionParser.loadMentions();
-            await this.renderInbox(container);
-            new Notice('Inbox refreshed');
+        refreshBtn.addEventListener('click', () => {
+            void (async () => {
+                await this.mentionParser.loadMentions();
+                await this.renderInbox(container);
+                new Notice('Inbox refreshed');
+            })();
         });
 
         // Mark all as read button - only show if there are unread messages
@@ -235,9 +245,11 @@ export class MentionPanelView extends ItemView {
                 text: 'Mark all read',
                 cls: 'collab-btn-small'
             });
-            markAllBtn.addEventListener('click', async () => {
-                await this.mentionParser.markAllAsRead();
-                await this.renderInbox(container);
+            markAllBtn.addEventListener('click', () => {
+                void (async () => {
+                    await this.mentionParser.markAllAsRead();
+                    await this.renderInbox(container);
+                })();
             });
         }
 
@@ -274,6 +286,7 @@ export class MentionPanelView extends ItemView {
     }
 
     private async renderSent(container: HTMLElement): Promise<void> {
+        await Promise.resolve();
         container.empty();
         container.removeClass('collab-chat-container');  // Remove chat-specific layout
 
@@ -286,10 +299,12 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-btn-small collab-refresh-btn',
             attr: { title: 'Refresh' }
         });
-        refreshBtn.addEventListener('click', async () => {
-            await this.mentionParser.loadMentions();
-            await this.renderSent(container);
-            new Notice('Sent refreshed');
+        refreshBtn.addEventListener('click', () => {
+            void (async () => {
+                await this.mentionParser.loadMentions();
+                await this.renderSent(container);
+                new Notice('Sent refreshed');
+            })();
         });
 
         const mentions = this.mentionParser.getMentionsFromCurrentUser();
@@ -320,11 +335,13 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-btn-small collab-refresh-btn',
             attr: { title: 'Refresh' }
         });
-        refreshBtn.addEventListener('click', async () => {
-            await this.userManager.loadPresence();
-            await this.userManager.loadUsers();
-            await this.renderTeam(container);
-            new Notice('Team refreshed');
+        refreshBtn.addEventListener('click', () => {
+            void (async () => {
+                await this.userManager.loadPresence();
+                await this.userManager.loadUsers();
+                await this.renderTeam(container);
+                new Notice('Team refreshed');
+            })();
         });
 
         // Reload presence data to get latest status
@@ -363,9 +380,11 @@ export class MentionPanelView extends ItemView {
                 }
             }
 
-            statusSelect.addEventListener('change', async () => {
-                await this.userManager.setManualStatus(statusSelect.value as ManualStatus);
-                await this.renderTeam(container);
+            statusSelect.addEventListener('change', () => {
+                void (async () => {
+                    await this.userManager.setManualStatus(statusSelect.value as ManualStatus);
+                    await this.renderTeam(container);
+                })();
             });
         }
 
@@ -423,12 +442,14 @@ export class MentionPanelView extends ItemView {
         headerEl.createEl('h3', { text: 'Reminders' });
 
         const addBtn = headerEl.createEl('button', {
-            text: '+ New Reminder',
+            text: 'New reminder +',
             cls: 'collab-reminder-add-btn'
         });
         addBtn.addEventListener('click', () => {
-            new NewReminderModal(this.app, this.reminderManager, async () => {
-                await this.renderReminders(container);
+            new NewReminderModal(this.app, this.reminderManager, () => {
+                void (async () => {
+                    await this.renderReminders(container);
+                })();
             }).open();
         });
 
@@ -437,8 +458,10 @@ export class MentionPanelView extends ItemView {
         if (pastDue.length > 0) {
             container.createEl('div', { text: `⚠️ Overdue (${pastDue.length})`, cls: 'collab-reminder-section-header overdue' });
             for (const reminder of pastDue) {
-                this.renderReminderItem(container, reminder, async () => {
-                    await this.renderReminders(container);
+                this.renderReminderItem(container, reminder, () => {
+                    void (async () => {
+                        await this.renderReminders(container);
+                    })();
                 });
             }
         }
@@ -448,8 +471,10 @@ export class MentionPanelView extends ItemView {
         if (upcoming.length > 0) {
             container.createEl('div', { text: `Upcoming (${upcoming.length})`, cls: 'collab-reminder-section-header' });
             for (const reminder of upcoming) {
-                this.renderReminderItem(container, reminder, async () => {
-                    await this.renderReminders(container);
+                this.renderReminderItem(container, reminder, () => {
+                    void (async () => {
+                        await this.renderReminders(container);
+                    })();
                 });
             }
         }
@@ -469,8 +494,10 @@ export class MentionPanelView extends ItemView {
             });
 
             for (const reminder of completed.slice(0, 10)) {  // Show only last 10
-                this.renderReminderItem(completedContainer, reminder, async () => {
-                    await this.renderReminders(container);
+                this.renderReminderItem(completedContainer, reminder, () => {
+                    void (async () => {
+                        await this.renderReminders(container);
+                    })();
                 }, true);
             }
         }
@@ -504,12 +531,14 @@ export class MentionPanelView extends ItemView {
             attr: { type: 'checkbox' }
         });
         checkbox.checked = reminder.completed;
-        checkbox.addEventListener('change', async () => {
-            if (!reminder.completed) {
-                await this.reminderManager.completeReminder(reminder.id);
-                new Notice('Reminder completed! ✓');
-            }
-            onUpdate();
+        checkbox.addEventListener('change', () => {
+            void (async () => {
+                if (!reminder.completed) {
+                    await this.reminderManager.completeReminder(reminder.id);
+                    new Notice('Reminder completed! ✓');
+                }
+                onUpdate();
+            })();
         });
 
         // Content
@@ -539,7 +568,7 @@ export class MentionPanelView extends ItemView {
         // Global badge
         if (reminder.isGlobal) {
             contentEl.createEl('span', {
-                text: '🌐 Team',
+                text: 'Team 🌐',
                 cls: 'collab-reminder-global-badge'
             });
         }
@@ -577,10 +606,12 @@ export class MentionPanelView extends ItemView {
             attr: { title: 'Delete' }
         });
         deleteBtn.setText('🗑️');
-        deleteBtn.addEventListener('click', async (e: MouseEvent) => {
+        deleteBtn.addEventListener('click', (e: MouseEvent) => {
             e.stopPropagation();
-            await this.reminderManager.deleteReminder(reminder.id);
-            onUpdate();
+            void (async () => {
+                await this.reminderManager.deleteReminder(reminder.id);
+                onUpdate();
+            })();
         });
     }
 
@@ -643,14 +674,16 @@ export class MentionPanelView extends ItemView {
                     this.app,
                     'Remove team member?',
                     `Are you sure you want to remove @${user.vaultName} from the team?`,
-                    async () => {
-                        await this.userManager.removeUser(user.vaultName);
-                        // Re-render the team tab
-                        const teamContainer = container.parentElement;
-                        if (teamContainer) {
-                            await this.renderTeam(teamContainer);
-                        }
-                        new Notice(`@${user.vaultName} has been removed from the team`);
+                    () => {
+                        void (async () => {
+                            await this.userManager.removeUser(user.vaultName);
+                            // Re-render the team tab
+                            const teamContainer = container.parentElement;
+                            if (teamContainer) {
+                                await this.renderTeam(teamContainer);
+                            }
+                            new Notice(`@${user.vaultName} has been removed from the team`);
+                        })();
                     }
                 ).open();
             });
@@ -713,11 +746,13 @@ export class MentionPanelView extends ItemView {
             text: this.channelListCollapsed ? '»' : '«'
         });
         collapseBtn.setAttribute('title', this.channelListCollapsed ? 'Expand channels' : 'Collapse channels');
-        collapseBtn.addEventListener('click', async () => {
-            this.channelListCollapsed = !this.channelListCollapsed;
-            if (this.chatContainer) {
-                await this.renderChat(this.chatContainer);
-            }
+        collapseBtn.addEventListener('click', () => {
+            void (async () => {
+                this.channelListCollapsed = !this.channelListCollapsed;
+                if (this.chatContainer) {
+                    await this.renderChat(this.chatContainer);
+                }
+            })();
         });
 
         // Only show these when expanded
@@ -728,7 +763,7 @@ export class MentionPanelView extends ItemView {
                 cls: 'collab-channel-new-btn',
                 text: '+'
             });
-            newBtn.setAttribute('title', 'New channel or DM');
+            newBtn.setAttribute('title', 'New channel or dm');
             newBtn.addEventListener('click', () => this.showNewChannelModal());
 
             // Channel items
@@ -804,11 +839,13 @@ export class MentionPanelView extends ItemView {
         }
 
         // Click to switch channel
-        itemEl.addEventListener('click', async () => {
-            this.chatManager.setActiveChannel(channel.id);
-            if (this.chatContainer) {
-                await this.renderChat(this.chatContainer);
-            }
+        itemEl.addEventListener('click', () => {
+            void (async () => {
+                this.chatManager.setActiveChannel(channel.id);
+                if (this.chatContainer) {
+                    await this.renderChat(this.chatContainer);
+                }
+            })();
         });
     }
 
@@ -868,7 +905,7 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-chat-search-input',
             attr: {
                 type: 'text',
-                placeholder: '🔍 Search messages...',
+                placeholder: 'Search messages... 🔍',
                 value: this.chatSearchQuery
             }
         });
@@ -916,12 +953,14 @@ export class MentionPanelView extends ItemView {
             text: '🔄',
             attr: { title: 'Refresh chat' }
         });
-        refreshBtn.addEventListener('click', async () => {
-            await this.chatManager.loadChat();
-            if (this.chatContainer) {
-                await this.renderChat(this.chatContainer);
-            }
-            new Notice('Chat refreshed');
+        refreshBtn.addEventListener('click', () => {
+            void (async () => {
+                await this.chatManager.loadChat();
+                if (this.chatContainer) {
+                    await this.renderChat(this.chatContainer);
+                }
+                new Notice('Chat refreshed');
+            })();
         });
 
         // Channel actions (for non-general channels)
@@ -939,17 +978,19 @@ export class MentionPanelView extends ItemView {
                 text: isMuted ? '🔇 Muted' : '🔔'
             });
             muteBtn.setAttribute('title', isMuted ? 'Unmute channel' : 'Mute notifications');
-            muteBtn.addEventListener('click', async () => {
-                await this.chatManager.toggleChannelMute(channel.id);
-                if (this.chatContainer) {
-                    await this.renderChat(this.chatContainer);
-                }
+            muteBtn.addEventListener('click', () => {
+                void (async () => {
+                    await this.chatManager.toggleChannelMute(channel.id);
+                    if (this.chatContainer) {
+                        await this.renderChat(this.chatContainer);
+                    }
+                })();
             });
 
             // Add member button
             const addBtn = headerActionsEl.createEl('button', {
                 cls: 'collab-header-btn',
-                text: '+ Add'
+                text: 'Add +'
             });
             addBtn.addEventListener('click', () => this.showAddMemberModal(channel));
 
@@ -1021,11 +1062,13 @@ export class MentionPanelView extends ItemView {
                     ).open();
                 } else {
                     // Not the last member - normal leave confirmation
-                    new ConfirmActionModal(this.app, `Leave ${channelType}?`, `You will no longer see messages in this ${channelType}.`, async () => {
-                        await this.chatManager.leaveChannel(channel.id, currentUser);
-                        if (this.chatContainer) {
-                            await this.renderChat(this.chatContainer);
-                        }
+                    new ConfirmActionModal(this.app, `Leave ${channelType}?`, `You will no longer see messages in this ${channelType}.`, () => {
+                        void (async () => {
+                            await this.chatManager.leaveChannel(channel.id, currentUser);
+                            if (this.chatContainer) {
+                                await this.renderChat(this.chatContainer);
+                            }
+                        })();
                     }).open();
                 }
             });
@@ -1122,7 +1165,7 @@ export class MentionPanelView extends ItemView {
         // Jump to bottom button (hidden by default, shown when scrolled up)
         const jumpBtn = messagesWrapper.createEl('button', {
             cls: 'collab-jump-to-bottom collab-hidden',
-            text: '↓ Jump to latest'
+            text: 'Jump to latest ↓ '
         });
 
         // Show/hide jump button based on scroll position
@@ -1189,7 +1232,7 @@ export class MentionPanelView extends ItemView {
         });
 
         // Handle paste for images
-        textInput.addEventListener('paste', async (e) => {
+        textInput.addEventListener('paste', (e) => {
             const items = e.clipboardData?.items;
             if (!items) return;
 
@@ -1198,12 +1241,14 @@ export class MentionPanelView extends ItemView {
                     e.preventDefault();
                     const blob = item.getAsFile();
                     if (blob) {
-                        const image = await this.chatManager.saveImageFromClipboard(blob);
-                        if (image) {
-                            this.pendingImages.push(image);
-                            this.updateImagePreview(imagePreviewArea);
-                            new Notice('Image added to message');
-                        }
+                        void (async () => {
+                            const image = await this.chatManager.saveImageFromClipboard(blob);
+                            if (image) {
+                                this.pendingImages.push(image);
+                                this.updateImagePreview(imagePreviewArea);
+                                new Notice('Image added to message');
+                            }
+                        })();
                     }
                     break;
                 }
@@ -1243,17 +1288,21 @@ export class MentionPanelView extends ItemView {
             attr: { type: 'file', accept: 'image/*', style: 'display: none' }
         });
         imageBtn.addEventListener('click', () => imageInput.click());
-        imageInput.addEventListener('change', async () => {
+        imageInput.addEventListener('change', () => {
             const file = imageInput.files?.[0];
             if (file) {
-                const image = await this.chatManager.saveImage(file);
-                if (image) {
-                    this.pendingImages.push(image);
-                    this.updateImagePreview(imagePreviewArea);
-                    new Notice('Image added to message');
-                }
+                void (async () => {
+                    const image = await this.chatManager.saveImage(file);
+                    if (image) {
+                        this.pendingImages.push(image);
+                        this.updateImagePreview(imagePreviewArea);
+                        new Notice('Image added to message');
+                    }
+                    imageInput.value = '';
+                })();
+            } else {
+                imageInput.value = '';
             }
-            imageInput.value = '';
         });
 
         // Mention button
@@ -1310,28 +1359,36 @@ export class MentionPanelView extends ItemView {
             }
         };
 
-        sendBtn.addEventListener('click', sendMessage);
-
-        // Track typing status
-        textInput.addEventListener('input', async () => {
-            const activeChannelId = this.chatManager.getActiveChannelId();
-
-            // Set typing status
-            await this.userManager.setTyping(activeChannelId);
-
-            // Clear typing after 3 seconds of no input
-            if (this.typingTimeout) {
-                window.clearTimeout(this.typingTimeout);
-            }
-            this.typingTimeout = window.setTimeout(async () => {
-                await this.userManager.clearTyping();
-            }, 3000);
+        sendBtn.addEventListener('click', () => {
+            void sendMessage();
         });
 
-        textInput.addEventListener('keydown', async (e) => {
+        // Track typing status
+        textInput.addEventListener('input', () => {
+            void (async () => {
+                const activeChannelId = this.chatManager.getActiveChannelId();
+
+                // Set typing status
+                await this.userManager.setTyping(activeChannelId);
+
+                // Clear typing after 3 seconds of no input
+                if (this.typingTimeout) {
+                    window.clearTimeout(this.typingTimeout);
+                }
+                this.typingTimeout = window.setTimeout(() => {
+                    void (async () => {
+                        await this.userManager.clearTyping();
+                    })();
+                }, 3000);
+            })();
+        });
+
+        textInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                await sendMessage();
+                void (async () => {
+                    await sendMessage();
+                })();
             }
         });
     }
@@ -1369,19 +1426,23 @@ export class MentionPanelView extends ItemView {
     }
 
     private showNewChannelModal(): void {
-        new NewChannelModal(this.app, this.userManager, this.chatManager, async (channel) => {
-            this.chatManager.setActiveChannel(channel.id);
-            if (this.chatContainer) {
-                await this.renderChat(this.chatContainer);
-            }
+        new NewChannelModal(this.app, this.userManager, this.chatManager, (channel) => {
+            void (async () => {
+                this.chatManager.setActiveChannel(channel.id);
+                if (this.chatContainer) {
+                    await this.renderChat(this.chatContainer);
+                }
+            })();
         }).open();
     }
 
     private showAddMemberModal(channel: Channel): void {
-        new AddMemberModal(this.app, this.userManager, this.chatManager, channel, async () => {
-            if (this.chatContainer) {
-                await this.renderChat(this.chatContainer);
-            }
+        new AddMemberModal(this.app, this.userManager, this.chatManager, channel, () => {
+            void (async () => {
+                if (this.chatContainer) {
+                    await this.renderChat(this.chatContainer);
+                }
+            })();
         }).open();
     }
 
@@ -1428,7 +1489,7 @@ export class MentionPanelView extends ItemView {
                 cls: 'collab-chat-message deleted'
             });
             msgEl.createEl('div', {
-                text: '🗑️ This message was deleted',
+                text: 'This message was deleted 🗑️',
                 cls: 'collab-chat-deleted-text'
             });
             return msgEl;
@@ -1461,11 +1522,13 @@ export class MentionPanelView extends ItemView {
                     cls: 'collab-file-link',
                     attr: { href: '#' }
                 });
-                linkEl.addEventListener('click', async (e) => {
+                linkEl.addEventListener('click', (e) => {
                     e.preventDefault();
                     const file = this.app.vault.getAbstractFileByPath(filePath);
                     if (file instanceof TFile) {
-                        await this.app.workspace.getLeaf().openFile(file);
+                        void (async () => {
+                            await this.app.workspace.getLeaf().openFile(file);
+                        })();
                     }
                 });
                 lastIndex = match.index + match[0].length;
@@ -1524,7 +1587,7 @@ export class MentionPanelView extends ItemView {
                 });
             } else if (repliedMsg?.deleted) {
                 const replyRefEl = msgEl.createEl('div', { cls: 'collab-message-reply-ref deleted' });
-                replyRefEl.createEl('span', { text: '↩ Original message was deleted' });
+                replyRefEl.createEl('span', { text: 'Original message was deleted ↩ ' });
             }
         }
 
@@ -1578,11 +1641,13 @@ export class MentionPanelView extends ItemView {
                 reactionBtn.setAttribute('title', reaction.users.join(', '));
 
                 // Click to toggle reaction
-                reactionBtn.addEventListener('click', async () => {
-                    await this.chatManager.toggleReaction(msg.id, reaction.emoji);
-                    if (this.chatContainer) {
-                        await this.renderChat(this.chatContainer);
-                    }
+                reactionBtn.addEventListener('click', () => {
+                    void (async () => {
+                        await this.chatManager.toggleReaction(msg.id, reaction.emoji);
+                        if (this.chatContainer) {
+                            await this.renderChat(this.chatContainer);
+                        }
+                    })();
                 });
             }
         }
@@ -1634,11 +1699,13 @@ export class MentionPanelView extends ItemView {
             editBtn.setText('✏️');
             editBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                new EditMessageModal(this.app, msg.message, async (newContent) => {
-                    await this.chatManager.editMessage(msg.id, newContent);
-                    if (this.chatContainer) {
-                        await this.renderChat(this.chatContainer);
-                    }
+                new EditMessageModal(this.app, msg.message, (newContent) => {
+                    void (async () => {
+                        await this.chatManager.editMessage(msg.id, newContent);
+                        if (this.chatContainer) {
+                            await this.renderChat(this.chatContainer);
+                        }
+                    })();
                 }).open();
             });
 
@@ -1649,11 +1716,13 @@ export class MentionPanelView extends ItemView {
             deleteBtn.setText('🗑️');
             deleteBtn.addEventListener('click', (e: MouseEvent) => {
                 e.stopPropagation();
-                new ConfirmDeleteModal(this.app, async () => {
-                    await this.chatManager.deleteMessage(msg.id);
-                    if (this.chatContainer) {
-                        await this.renderChat(this.chatContainer);
-                    }
+                new ConfirmDeleteModal(this.app, () => {
+                    void (async () => {
+                        await this.chatManager.deleteMessage(msg.id);
+                        if (this.chatContainer) {
+                            await this.renderChat(this.chatContainer);
+                        }
+                    })();
                 }).open();
             });
         }
@@ -1670,12 +1739,14 @@ export class MentionPanelView extends ItemView {
             const btn = document.createElement('button');
             btn.className = 'collab-reaction-picker-btn';
             btn.textContent = emoji;
-            btn.addEventListener('click', async () => {
-                await this.chatManager.toggleReaction(messageId, emoji);
-                picker.remove();
-                if (this.chatContainer) {
-                    await this.renderChat(this.chatContainer);
-                }
+            btn.addEventListener('click', () => {
+                void (async () => {
+                    await this.chatManager.toggleReaction(messageId, emoji);
+                    picker.remove();
+                    if (this.chatContainer) {
+                        await this.renderChat(this.chatContainer);
+                    }
+                })();
             });
             picker.appendChild(btn);
         }
@@ -1747,9 +1818,11 @@ export class MentionPanelView extends ItemView {
                     text: `📄 ${filePath}`,
                     cls: 'collab-chat-file-link'
                 });
-                link.addEventListener('click', async (e) => {
+                link.addEventListener('click', (e) => {
                     e.preventDefault();
-                    await this.openFile(filePath);
+                    void (async () => {
+                        await this.openFile(filePath);
+                    })();
                 });
             } else if (matchedText.startsWith('@#')) {
                 // @#channel mention
@@ -1759,7 +1832,7 @@ export class MentionPanelView extends ItemView {
                     cls: 'collab-chat-channel-mention'
                 });
                 // Make clickable to navigate to channel
-                channelMentionEl.addEventListener('click', async (e) => {
+                channelMentionEl.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     // Find channel by name
@@ -1769,8 +1842,11 @@ export class MentionPanelView extends ItemView {
                         const channel = channels.find(ch => ch.name.toLowerCase() === channelName.toLowerCase());
                         if (channel) {
                             this.chatManager.setActiveChannel(channel.id);
-                            if (this.chatContainer) {
-                                await this.renderChat(this.chatContainer);
+                            const container = this.chatContainer;
+                            if (container) {
+                                void (async () => {
+                                    await this.renderChat(container);
+                                })();
                             }
                         }
                     }
@@ -1909,6 +1985,7 @@ export class MentionPanelView extends ItemView {
      * Refresh only the messages area without touching input
      */
     private async refreshMessagesOnly(): Promise<void> {
+        await Promise.resolve();
         if (!this.messagesContainer) return;
 
         const currentUser = this.userManager.getCurrentUser();
@@ -2168,9 +2245,11 @@ export class MentionPanelView extends ItemView {
             cls: 'collab-file-link'
         });
 
-        link.addEventListener('click', async (e) => {
+        link.addEventListener('click', (e) => {
             e.preventDefault();
-            await this.openFileAtLine(mention.file, mention.line);
+            void (async () => {
+                await this.openFileAtLine(mention.file, mention.line);
+            })();
         });
 
         // Actions
@@ -2183,14 +2262,16 @@ export class MentionPanelView extends ItemView {
                 attr: { title: 'Mark as read' }
             });
 
-            markReadBtn.addEventListener('click', async (e) => {
+            markReadBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                await this.mentionParser.markAsRead(mention.id);
-                itemEl.removeClass('unread');
-                markReadBtn.remove();
-                if (this.onBadgeUpdate) {
-                    this.onBadgeUpdate();
-                }
+                void (async () => {
+                    await this.mentionParser.markAsRead(mention.id);
+                    itemEl.removeClass('unread');
+                    markReadBtn.remove();
+                    if (this.onBadgeUpdate) {
+                        this.onBadgeUpdate();
+                    }
+                })();
             });
         }
 
@@ -2439,7 +2520,7 @@ class NewChannelModal extends Modal {
             // Channel name
             formEl.createEl('label', { text: 'Channel name' });
             const nameInput = formEl.createEl('input', {
-                attr: { type: 'text', placeholder: 'e.g., project-alpha' }
+                attr: { type: 'text', placeholder: 'Example: project-alpha' }
             });
 
             // Member selection
@@ -2474,7 +2555,7 @@ class NewChannelModal extends Modal {
                 text: 'Create channel',
                 cls: 'collab-create-btn'
             });
-            createBtn.addEventListener('click', async () => {
+            createBtn.addEventListener('click', () => {
                 const name = nameInput.value.trim();
                 if (!name) {
                     new Notice('Please enter a channel name');
@@ -2482,9 +2563,11 @@ class NewChannelModal extends Modal {
                 }
                 if (!currentUser) return;
 
-                const channel = await this.chatManager.createGroupChannel(name, selectedMembers, currentUser.vaultName);
-                this.close();
-                this.onCreated(channel);
+                void (async () => {
+                    const channel = await this.chatManager.createGroupChannel(name, selectedMembers, currentUser.vaultName);
+                    this.close();
+                    this.onCreated(channel);
+                })();
             });
         };
 
@@ -2508,13 +2591,15 @@ class NewChannelModal extends Modal {
                 text: 'Start conversation',
                 cls: 'collab-create-btn'
             });
-            startBtn.addEventListener('click', async () => {
+            startBtn.addEventListener('click', () => {
                 const selectedUser = userSelect.value;
                 if (!selectedUser || !currentUser) return;
 
-                const channel = await this.chatManager.startDM(currentUser.vaultName, selectedUser);
-                this.close();
-                this.onCreated(channel);
+                void (async () => {
+                    const channel = await this.chatManager.startDM(currentUser.vaultName, selectedUser);
+                    this.close();
+                    this.onCreated(channel);
+                })();
             });
         };
 
@@ -2572,7 +2657,7 @@ class AddMemberModal extends Modal {
         // DM conversion warning
         if (this.channel.type === 'dm') {
             contentEl.createEl('p', {
-                text: 'Adding a member will convert this DM to a group channel.',
+                text: 'Adding a member will convert this dm to a group channel.',
                 cls: 'collab-warning-text'
             });
         }
@@ -2599,13 +2684,15 @@ class AddMemberModal extends Modal {
             text: 'Add member',
             cls: 'collab-create-btn'
         });
-        addBtn.addEventListener('click', async () => {
+        addBtn.addEventListener('click', () => {
             const selectedUser = userSelect.value;
             if (!selectedUser || !currentUser) return;
 
-            await this.chatManager.addMemberToChannel(this.channel.id, selectedUser, currentUser.vaultName);
-            this.close();
-            this.onAdded();
+            void (async () => {
+                await this.chatManager.addMemberToChannel(this.channel.id, selectedUser, currentUser.vaultName);
+                this.close();
+                this.onAdded();
+            })();
         });
     }
 
@@ -2751,18 +2838,22 @@ class DeleteChannelModal extends Modal {
             text: 'Delete',
             cls: 'collab-confirm-action-btn collab-delete-only-btn'
         });
-        deleteOnlyBtn.addEventListener('click', async () => {
+        deleteOnlyBtn.addEventListener('click', () => {
             this.close();
-            await this.onDeleteOnly();
+            void (async () => {
+                await this.onDeleteOnly();
+            })();
         });
 
         const exportBtn = buttonRow.createEl('button', {
-            text: 'Export & Delete',
+            text: 'Export and delete',
             cls: 'collab-confirm-action-btn collab-export-delete-btn'
         });
-        exportBtn.addEventListener('click', async () => {
+        exportBtn.addEventListener('click', () => {
             this.close();
-            await this.onExportAndDelete();
+            void (async () => {
+                await this.onExportAndDelete();
+            })();
         });
     }
 
@@ -2818,18 +2909,22 @@ class LeaveAsLastMemberModal extends Modal {
             text: 'Leave',
             cls: 'collab-confirm-action-btn collab-delete-only-btn'
         });
-        leaveOnlyBtn.addEventListener('click', async () => {
+        leaveOnlyBtn.addEventListener('click', () => {
             this.close();
-            await this.onLeaveOnly();
+            void (async () => {
+                await this.onLeaveOnly();
+            })();
         });
 
         const exportBtn = buttonRow.createEl('button', {
-            text: 'Export & Leave',
+            text: 'Export and leave',
             cls: 'collab-confirm-action-btn collab-export-delete-btn'
         });
-        exportBtn.addEventListener('click', async () => {
+        exportBtn.addEventListener('click', () => {
             this.close();
-            await this.onExportAndLeave();
+            void (async () => {
+                await this.onExportAndLeave();
+            })();
         });
     }
 
@@ -2874,7 +2969,7 @@ class NewReminderModal extends Modal {
             cls: 'collab-reminder-date-input',
             attr: {
                 type: 'text',
-                placeholder: 'e.g., tomorrow 3pm, in 2 hours, next monday'
+                placeholder: 'Example: tomorrow 3pm, in 2 hours, next monday'
             }
         });
 
@@ -2915,11 +3010,11 @@ class NewReminderModal extends Modal {
 
         // Priority
         contentEl.createEl('label', { text: 'Priority' });
-        const prioritySelect = contentEl.createEl('select', { cls: 'collab-reminder-priority-select' });
-        prioritySelect.createEl('option', { value: 'low', text: '🔵 Low' });
-        prioritySelect.createEl('option', { value: 'normal', text: '⚪ Normal' });
-        prioritySelect.createEl('option', { value: 'high', text: '🔴 High' });
-        (prioritySelect as HTMLSelectElement).value = 'normal';
+        const prioritySelect = contentEl.createEl('select', {cls: 'collab-reminder-priority-select'});
+        prioritySelect.createEl('option', { value: 'low', text: 'Low priority' }).prepend('🔵 ');
+        prioritySelect.createEl('option', { value: 'normal', text: 'Normal priority' }).prepend('⚪ ');
+        prioritySelect.createEl('option', { value: 'high', text: 'High priority' }).prepend('🔴 ');
+        prioritySelect.value = 'normal';
 
         // Global reminder checkbox
         const globalRow = contentEl.createEl('div', { cls: 'collab-reminder-global-row' });
@@ -2946,7 +3041,7 @@ class NewReminderModal extends Modal {
             text: 'Create reminder',
             cls: 'collab-reminder-create-btn'
         });
-        createBtn.addEventListener('click', async () => {
+        createBtn.addEventListener('click', () => {
             const message = messageInput.value.trim();
             if (!message) {
                 new Notice('Please enter a reminder message');
@@ -2959,13 +3054,15 @@ class NewReminderModal extends Modal {
                 return;
             }
 
-            const priority = (prioritySelect as HTMLSelectElement).value as ReminderPriority;
-            const isGlobal = (globalCheckbox as HTMLInputElement).checked;
+            const priority = prioritySelect.value as ReminderPriority;
+            const isGlobal = globalCheckbox.checked;
 
-            await this.reminderManager.createReminder(message, dueDate, priority, undefined, isGlobal);
-            new Notice(`Reminder set for ${ReminderManager.formatDueDate(dueDate.toISOString())}${isGlobal ? ' (shared with team)' : ''}`);
-            this.close();
-            this.onCreated();
+            void (async () => {
+                await this.reminderManager.createReminder(message, dueDate, priority, undefined, isGlobal);
+                new Notice(`Reminder set for ${ReminderManager.formatDueDate(dueDate.toISOString())}${isGlobal ? ' (shared with team)' : ''}`);
+                this.close();
+                this.onCreated();
+            })();
         });
 
         // Focus message input
@@ -2985,7 +3082,7 @@ class NewReminderModal extends Modal {
             previewEl.removeClass('invalid');
             previewEl.addClass('valid');
         } else {
-            previewEl.setText('❌ Could not parse date');
+            previewEl.setText('Could not parse date ❌');
             previewEl.removeClass('valid');
             previewEl.addClass('invalid');
         }
@@ -3054,11 +3151,11 @@ class EditReminderModal extends Modal {
 
         // Priority
         contentEl.createEl('label', { text: 'Priority' });
-        const prioritySelect = contentEl.createEl('select', { cls: 'collab-reminder-priority-select' });
-        prioritySelect.createEl('option', { value: 'low', text: '🔵 Low' });
-        prioritySelect.createEl('option', { value: 'normal', text: '⚪ Normal' });
-        prioritySelect.createEl('option', { value: 'high', text: '🔴 High' });
-        (prioritySelect as HTMLSelectElement).value = this.reminder.priority;
+        const prioritySelect = contentEl.createEl('select', {cls: 'collab-reminder-priority-select'});
+        prioritySelect.createEl('option', { value: 'low', text: 'Low priority' }).prepend('🔵 ');
+        prioritySelect.createEl('option', { value: 'normal', text: 'Normal priority' }).prepend('⚪ ');
+        prioritySelect.createEl('option', { value: 'high', text: 'High priority' }).prepend('🔴 ');
+        prioritySelect.value = this.reminder.priority;
 
         // Buttons
         const buttonRow = contentEl.createEl('div', { cls: 'collab-reminder-buttons' });
@@ -3073,7 +3170,7 @@ class EditReminderModal extends Modal {
             text: 'Save',
             cls: 'collab-reminder-create-btn'
         });
-        saveBtn.addEventListener('click', async () => {
+        saveBtn.addEventListener('click', () => {
             const message = messageInput.value.trim();
             if (!message) {
                 new Notice('Please enter a reminder message');
@@ -3090,17 +3187,19 @@ class EditReminderModal extends Modal {
                 }
             }
 
-            const priority = (prioritySelect as HTMLSelectElement).value as ReminderPriority;
+            const priority = prioritySelect.value as ReminderPriority;
 
-            await this.reminderManager.editReminder(this.reminder.id, {
-                message,
-                dueDate: newDueDate.toISOString(),
-                priority
-            });
+            void (async () => {
+                await this.reminderManager.editReminder(this.reminder.id, {
+                    message,
+                    dueDate: newDueDate.toISOString(),
+                    priority
+                });
 
-            new Notice('Reminder updated');
-            this.close();
-            this.onUpdated();
+                new Notice('Reminder updated');
+                this.close();
+                this.onUpdated();
+            })();
         });
     }
 
@@ -3149,20 +3248,22 @@ class SnoozeModal extends Modal {
                 text: option.label,
                 cls: 'collab-snooze-option-btn'
             });
-            btn.addEventListener('click', async () => {
-                if (option.minutes === -1) {
-                    // Tomorrow 9am
-                    const tomorrow = new Date();
-                    tomorrow.setDate(tomorrow.getDate() + 1);
-                    tomorrow.setHours(9, 0, 0, 0);
-                    const minutesUntil = Math.round((tomorrow.getTime() - Date.now()) / 60000);
-                    await this.reminderManager.snoozeReminder(this.reminderId, minutesUntil);
-                } else {
-                    await this.reminderManager.snoozeReminder(this.reminderId, option.minutes);
-                }
-                new Notice(`Reminder snoozed for ${option.label}`);
-                this.close();
-                this.onSnoozed();
+            btn.addEventListener('click', () => {
+                void (async () => {
+                    if (option.minutes === -1) {
+                        // Tomorrow 9am
+                        const tomorrow = new Date();
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        tomorrow.setHours(9, 0, 0, 0);
+                        const minutesUntil = Math.round((tomorrow.getTime() - Date.now()) / 60000);
+                        await this.reminderManager.snoozeReminder(this.reminderId, minutesUntil);
+                    } else {
+                        await this.reminderManager.snoozeReminder(this.reminderId, option.minutes);
+                    }
+                    new Notice(`Reminder snoozed for ${option.label}`);
+                    this.close();
+                    this.onSnoozed();
+                })();
             });
         }
 
@@ -3210,7 +3311,7 @@ export class ReminderNotificationModal extends Modal {
 
         // Global badge
         if (this.reminder.isGlobal) {
-            headerEl.createEl('span', { text: '🌐 Team', cls: 'collab-reminder-notif-global-badge' });
+            headerEl.createEl('span', { text: 'Team 🌐', cls: 'collab-reminder-notif-global-badge' });
         }
 
         // Message
@@ -3251,11 +3352,13 @@ export class ReminderNotificationModal extends Modal {
                 text: option.label,
                 cls: 'collab-reminder-notif-snooze-btn'
             });
-            snoozeBtn.addEventListener('click', async () => {
-                await this.reminderManager.snoozeReminder(this.reminder.id, option.minutes);
-                new Notice(`Snoozed for ${option.label}`);
-                this.close();
-                this.onAction();
+            snoozeBtn.addEventListener('click', () => {
+                void (async () => {
+                    await this.reminderManager.snoozeReminder(this.reminder.id, option.minutes);
+                    new Notice(`Snoozed for ${option.label}`);
+                    this.close();
+                    this.onAction();
+                })();
             });
         }
 
@@ -3263,14 +3366,16 @@ export class ReminderNotificationModal extends Modal {
         const buttonRow = actionsEl.createEl('div', { cls: 'collab-reminder-notif-buttons' });
 
         const completeBtn = buttonRow.createEl('button', {
-            text: '✓ Mark complete',
+            text: 'Mark complete ✓',
             cls: 'collab-reminder-notif-complete-btn'
         });
-        completeBtn.addEventListener('click', async () => {
-            await this.reminderManager.completeReminder(this.reminder.id);
-            new Notice('Reminder completed!');
-            this.close();
-            this.onAction();
+        completeBtn.addEventListener('click', () => {
+            void (async () => {
+                await this.reminderManager.completeReminder(this.reminder.id);
+                new Notice('Reminder completed!');
+                this.close();
+                this.onAction();
+            })();
         });
 
         const dismissBtn = buttonRow.createEl('button', {

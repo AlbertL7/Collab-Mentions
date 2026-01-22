@@ -297,24 +297,26 @@ export class ReminderManager {
 
         // Check immediately on start
         console.debug('[Collab-Mentions] Running immediate check on startPeriodicCheck');
-        this.checkDueReminders();
+        void this.checkDueReminders();
 
         // Then check periodically - reload from disk first to catch any changes
-        this.checkInterval = window.setInterval(async () => {
-            // Log each interval tick for debugging
-            const now = new Date();
-            const activeReminders = this.remindersData.reminders.filter(r => !r.completed && !r.notified);
-            if (activeReminders.length > 0) {
-                console.debug('[Collab-Mentions] Periodic check running at', now.toISOString(),
-                    'with', activeReminders.length, 'active unnotified reminders');
-            }
+        this.checkInterval = window.setInterval(() => {
+            void (async () => {
+                // Log each interval tick for debugging
+                const now = new Date();
+                const activeReminders = this.remindersData.reminders.filter(r => !r.completed && !r.notified);
+                if (activeReminders.length > 0) {
+                    console.debug('[Collab-Mentions] Periodic check running at', now.toISOString(),
+                        'with', activeReminders.length, 'active unnotified reminders');
+                }
 
-            // Reload from disk to ensure we have latest data
-            await this.loadReminders();
-            const dueReminders = await this.checkDueReminders();
-            if (dueReminders.length > 0) {
-                console.debug('[Collab-Mentions] Periodic check found due reminders:', dueReminders.length);
-            }
+                // Reload from disk to ensure we have latest data
+                await this.loadReminders();
+                const dueReminders = await this.checkDueReminders();
+                if (dueReminders.length > 0) {
+                    console.debug('[Collab-Mentions] Periodic check found due reminders:', dueReminders.length);
+                }
+            })();
         }, intervalMs);
     }
 
