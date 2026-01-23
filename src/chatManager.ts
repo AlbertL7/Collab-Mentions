@@ -1,5 +1,5 @@
 import { App } from 'obsidian';
-import { ChatMessage, ChatData, ChatDataV1, ChatDataV2, ChatImage, ChatReaction, Channel, ChannelType, GENERAL_CHANNEL_ID, DeletedChannel } from './types';
+import { ChatMessage, ChatData, ChatDataV1, ChatDataV2, ChatImage, ChatReaction, Channel, GENERAL_CHANNEL_ID } from './types';
 import { UserManager } from './userManager';
 
 const CHAT_FILE = '.collab-mentions/chat.json';

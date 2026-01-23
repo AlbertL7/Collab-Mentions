@@ -542,6 +542,9 @@ var UserManager = class {
               console.debug("[Collab-Mentions] Demoted duplicate primary admin:", user.vaultName);
             }
           }
+          if (!hasPrimary && this.usersConfig.users.length > 0) {
+            console.warn("[Collab-Mentions] No primary admin found - this may indicate data corruption");
+          }
           console.debug("[Collab-Mentions] After merge - users:", this.usersConfig.users.map((u) => ({
             name: u.vaultName,
             regNum: u.registrationNumber,
@@ -3475,7 +3478,7 @@ var Notifier = class {
         "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Mi4eBdWxzgImLhXlta3WBi42HfHJud4SLjIV5bmt2goyMhXlsandCjIyFeWxqdYKMjIV5bGp1goyMhXlsanWCjIyFeWxqdYKMjIV5bA=="
       );
     } catch (e) {
-      console.debug("Could not initialize notification sound");
+      console.debug("Could not initialize notification sound:", e);
     }
   }
   /**
@@ -5152,9 +5155,9 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       const fileLinkRegex = /\[\[([^\]]+)\]\]/g;
       let lastIndex = 0;
       let match;
-      while ((match = fileLinkRegex.exec(msg.message)) !== null) {
+      while ((match = fileLinkRegex.exec(messageText)) !== null) {
         if (match.index > lastIndex) {
-          contentEl2.appendText(msg.message.slice(lastIndex, match.index));
+          contentEl2.appendText(messageText.slice(lastIndex, match.index));
         }
         const filePath = match[1];
         const linkEl = contentEl2.createEl("a", {
@@ -5173,8 +5176,8 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         });
         lastIndex = match.index + match[0].length;
       }
-      if (lastIndex < msg.message.length) {
-        contentEl2.appendText(msg.message.slice(lastIndex));
+      if (lastIndex < messageText.length) {
+        contentEl2.appendText(messageText.slice(lastIndex));
       }
       return msgEl2;
     }
@@ -5355,6 +5358,9 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     let left = rect.left;
     if (top < 8) {
       top = rect.bottom + 8;
+      if (top + pickerRect.height > viewportHeight - 8) {
+        top = rect.top - pickerRect.height - 8;
+      }
     }
     if (left + pickerRect.width > viewportWidth - 8) {
       left = viewportWidth - pickerRect.width - 8;
@@ -6740,7 +6746,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
             void (async () => {
               if (pendingFiles.size > 0) {
                 console.debug("[Collab-Mentions] Follow-up processing", pendingFiles.size, "files");
-                for (const [path, pendingFile] of pendingFiles) {
+                for (const [, pendingFile] of pendingFiles) {
                   await processFileForMentions(pendingFile);
                 }
                 pendingFiles.clear();

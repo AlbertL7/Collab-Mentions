@@ -598,6 +598,11 @@ export class UserManager {
                         }
                     }
 
+                    // Warn if no primary admin was found (edge case - may indicate data corruption)
+                    if (!hasPrimary && this.usersConfig.users.length > 0) {
+                        console.warn('[Collab-Mentions] No primary admin found - this may indicate data corruption');
+                    }
+
                     console.debug('[Collab-Mentions] After merge - users:', this.usersConfig.users.map(u => ({
                         name: u.vaultName,
                         regNum: u.registrationNumber,
