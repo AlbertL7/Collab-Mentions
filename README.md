@@ -1,8 +1,26 @@
 # Collab Mentions
 
-**Know exactly where and what to look at in your shared Obsidian vault.**
-**Tested With Google Dive**
+**Know exactly where and what to look at when sharing your Obsidian vault for collaboration.**
+--- 
+**Tested environments**
 
+This plugin has been tested using file-based synchronization with **Google Drive** between Windows and macOS systems.
+
+**Not tested on**
+
+The plugin has not been tested with the following sync methods:
+
+- Obsidian Sync
+- OneDrive
+- Dropbox
+- iCloud
+
+**Sync testing notes**
+
+This plugin was tested using Google Drive for file-based synchronization between Windows and macOS. Cross-platform behavior was verified under this setup.
+
+The plugin has not been tested with Obsidian Sync or other cloud sync providers, including OneDrive, Dropbox, or iCloud. It should work fine on other sync platforms but again has not been tested properly.
+--- 
 When you share an Obsidian vault with teammates via Google Drive, OneDrive, Dropbox, or any file sync service, you face a fundamental problem: **How do you know what changed? What should you be looking at? Did your teammate see the note you updated?**
 
 Collab Mentions solves this by letting you @mention teammates directly in your notes. Drop a `@Albert` in any note, and Albert gets notified to look at it. You can see when they've read it. No more guessing, no more "hey did you see that file I updated?"
