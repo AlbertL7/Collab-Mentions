@@ -450,7 +450,7 @@ export default class CollabMentionsPlugin extends Plugin {
         }
 
         if (leaf) {
-            workspace.revealLeaf(leaf);
+            void workspace.revealLeaf(leaf);
 
             // Navigate to specific tab or channel if requested
             const view = leaf.view as MentionPanelView;
@@ -1503,7 +1503,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
 
         containerEl.empty();
 
-        new Setting(containerEl).setName('General').setHeading();
+        new Setting(containerEl).setName('Registration').setHeading();
 
         // User info
         const currentUser = this.plugin.userManager.getCurrentUser();
@@ -1713,7 +1713,7 @@ class CollabMentionsSettingTab extends PluginSettingTab {
         if (isAdmin) {
             new Setting(containerEl)
                 .setName('Force auto-cleanup now')
-                .setDesc('[Admin] run auto-cleanup immediately (keeps last n per user for everyone)')
+                .setDesc('Run auto-cleanup immediately for all users, keeping the last configured number per user.')
                 .addButton(btn => btn
                     .setButtonText('Run auto-cleanup')
                     .onClick(async () => {

@@ -80,7 +80,7 @@ export class RegisterModal extends Modal {
 
         new Setting(contentEl)
             .setName('Your display name')
-            .setDesc('This is how others will @mention you, for example @Albert')
+            .setDesc('This is how others will mention you, for example, @Albert.')
             .addText(text => text
                 .setPlaceholder('Enter your name')
                 .onChange(value => {

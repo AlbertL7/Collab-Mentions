@@ -3749,7 +3749,7 @@ var RegisterModal = class extends import_obsidian3.Modal {
       cls: "collab-machine-info"
     });
     let vaultName = "";
-    new import_obsidian3.Setting(contentEl).setName("Your display name").setDesc("This is how others will @mention you, for example @Albert").addText(
+    new import_obsidian3.Setting(contentEl).setName("Your display name").setDesc("This is how others will mention you, for example, @Albert.").addText(
       (text) => text.setPlaceholder("Enter your name").onChange((value) => {
         vaultName = value.trim();
       })
@@ -6907,7 +6907,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       }
     }
     if (leaf) {
-      workspace.revealLeaf(leaf);
+      void workspace.revealLeaf(leaf);
       const view = leaf.view;
       if (view) {
         if (options == null ? void 0 : options.channelId) {
@@ -7683,7 +7683,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian5.Setting(containerEl).setName("General").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Registration").setHeading();
     const currentUser = this.plugin.userManager.getCurrentUser();
     const isAdmin = this.plugin.userManager.isCurrentUserAdmin();
     if (currentUser) {
@@ -7809,7 +7809,7 @@ var CollabMentionsSettingTab = class extends import_obsidian5.PluginSettingTab {
       })
     );
     if (isAdmin) {
-      new import_obsidian5.Setting(containerEl).setName("Force auto-cleanup now").setDesc("[Admin] run auto-cleanup immediately (keeps last n per user for everyone)").addButton(
+      new import_obsidian5.Setting(containerEl).setName("Force auto-cleanup now").setDesc("Run auto-cleanup immediately for all users, keeping the last configured number per user.").addButton(
         (btn) => btn.setButtonText("Run auto-cleanup").onClick(async () => {
           const removed = await this.plugin.mentionParser.autoCleanupMentions(
             this.plugin.settings.maxMentionsPerUser,
