@@ -3749,7 +3749,7 @@ var RegisterModal = class extends import_obsidian3.Modal {
       cls: "collab-machine-info"
     });
     let vaultName = "";
-    new import_obsidian3.Setting(contentEl).setName("Your display name").setDesc("This is how others will mention you, for example, @Albert.").addText(
+    new import_obsidian3.Setting(contentEl).setName("Your display name").setDesc("This is how others will mention you. For example, type your display name as shown in the expandable window.").addText(
       (text) => text.setPlaceholder("Enter your name").onChange((value) => {
         vaultName = value.trim();
       })
