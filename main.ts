@@ -1,6 +1,7 @@
 import {
     App,
     Editor,
+    MarkdownView,
     Plugin,
     PluginSettingTab,
     Setting,
@@ -13,7 +14,7 @@ import {
     Notice
 } from 'obsidian';
 
-import { CollabMentionsSettings, DEFAULT_SETTINGS, Reminder, ChatMessage } from './src/types';
+import { CollabMentionsSettings, DEFAULT_SETTINGS, VaultUser, Reminder, ChatMessage } from './src/types';
 import { UserManager } from './src/userManager';
 import { MentionParser } from './src/mentionParser';
 import { ChatManager } from './src/chatManager';
@@ -210,7 +211,7 @@ export default class CollabMentionsPlugin extends Plugin {
                         void (async () => {
                             if (pendingFiles.size > 0) {
                                 console.debug('[Collab-Mentions] Follow-up processing', pendingFiles.size, 'files');
-                                for (const [, pendingFile] of pendingFiles) {
+                                for (const [path, pendingFile] of pendingFiles) {
                                     await processFileForMentions(pendingFile);
                                 }
                                 pendingFiles.clear();

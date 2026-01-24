@@ -1,4 +1,4 @@
-import { App, TFile } from 'obsidian';
+import { App, TFile, Editor, MarkdownView } from 'obsidian';
 import { Mention, MentionsData, MentionReply } from './types';
 import { UserManager } from './userManager';
 

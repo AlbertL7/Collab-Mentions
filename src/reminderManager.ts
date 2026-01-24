@@ -1,4 +1,4 @@
-import { App } from 'obsidian';
+import { App, Notice } from 'obsidian';
 import { Reminder, RemindersData, ReminderPriority } from './types';
 import { UserManager } from './userManager';
 

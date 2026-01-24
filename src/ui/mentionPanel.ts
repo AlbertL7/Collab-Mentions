@@ -1,5 +1,5 @@
-import { App, ItemView, WorkspaceLeaf, TFile, MarkdownView, FuzzySuggestModal, Notice, Modal } from 'obsidian';
-import { Mention, UserStatus, ManualStatus, ChatMessage, ChatImage, Channel, GENERAL_CHANNEL_ID, Reminder, ReminderPriority } from '../types';
+import { App, ItemView, WorkspaceLeaf, TFile, MarkdownView, FuzzySuggestModal, Notice, Modal, Setting } from 'obsidian';
+import { Mention, UserStatus, ManualStatus, ChatMessage, ChatImage, ChatReaction, Channel, GENERAL_CHANNEL_ID, Reminder, ReminderPriority } from '../types';
 import { MentionParser } from '../mentionParser';
 import { UserManager } from '../userManager';
 import { ChatManager } from '../chatManager';
@@ -1510,10 +1510,10 @@ export class MentionPanelView extends ItemView {
             let lastIndex = 0;
             let match;
 
-            while ((match = fileLinkRegex.exec(messageText)) !== null) {
+            while ((match = fileLinkRegex.exec(msg.message)) !== null) {
                 // Add text before the link
                 if (match.index > lastIndex) {
-                    contentEl.appendText(messageText.slice(lastIndex, match.index));
+                    contentEl.appendText(msg.message.slice(lastIndex, match.index));
                 }
                 // Add clickable file link
                 const filePath = match[1];
@@ -1534,8 +1534,8 @@ export class MentionPanelView extends ItemView {
                 lastIndex = match.index + match[0].length;
             }
             // Add remaining text
-            if (lastIndex < messageText.length) {
-                contentEl.appendText(messageText.slice(lastIndex));
+            if (lastIndex < msg.message.length) {
+                contentEl.appendText(msg.message.slice(lastIndex));
             }
 
             return msgEl;
@@ -1769,10 +1769,6 @@ export class MentionPanelView extends ItemView {
         // If it would go off the top, show below instead
         if (top < 8) {
             top = rect.bottom + 8;
-            // If showing below would go off the bottom, revert to above (partial visibility is better)
-            if (top + pickerRect.height > viewportHeight - 8) {
-                top = rect.top - pickerRect.height - 8;
-            }
         }
 
         // If it would go off the right edge, align to right side
