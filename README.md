@@ -394,6 +394,24 @@ The plugin includes robust conflict resolution for file sync services:
 
 ---
 
+## Known Sync Timing Considerations
+
+Due to the file-based sync nature of this plugin, there are some timing considerations to be aware of:
+
+### Initial User Registration
+
+When setting up the vault for the first time, **wait 2-3 minutes between registering the first and second user**. This allows the sync service to fully propagate the user data and prevents duplicate primary admin conflicts. This only applies to initial setup — subsequent registrations don't require waiting.
+
+### Channel Member Count Updates
+
+When a user leaves a channel, it can take **up to 5 minutes** for the member count to refresh across all synced vaults. If you plan to export a chat before deleting the channel, ensure the member count has updated before proceeding to avoid any data loss.
+
+### User Presence Status
+
+The presence status indicators (Active, Snooze, Offline) may not always reflect real-time status due to sync delays between devices. For more reliable status, users can set their status manually in the Team tab. The automatic detection works best when sync delays are minimal.
+
+---
+
 ## Troubleshooting
 
 ### Mentions not appearing
