@@ -27,7 +27,7 @@ export class Notifier {
                 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Mi4eBdWxzgImLhXlta3WBi42HfHJud4SLjIV5bmt2goyMhXlsandCjIyFeWxqdYKMjIV5bGp1goyMhXlsanWCjIyFeWxqdYKMjIV5bA=='
             );
         } catch (e) {
-            console.debug('Could not initialize notification sound');
+            console.debug('Could not initialize notification sound:', e);
         }
     }
 

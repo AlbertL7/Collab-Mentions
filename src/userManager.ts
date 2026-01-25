@@ -147,12 +147,19 @@ export class UserManager {
         try {
             if (await this.app.vault.adapter.exists(PRESENCE_FILE)) {
                 const content = await this.app.vault.adapter.read(PRESENCE_FILE);
-                this.presenceData = JSON.parse(content);
+                // Check if content is empty or whitespace only (can happen with sync conflicts)
+                if (content && content.trim()) {
+                    this.presenceData = JSON.parse(content);
+                } else {
+                    // File exists but is empty - initialize with default
+                    console.debug('[Collab-Mentions] Presence file empty, initializing');
+                    this.presenceData = { presence: [] };
+                }
             } else {
                 this.presenceData = { presence: [] };
             }
         } catch (error) {
-            console.error('Failed to load presence data:', error);
+            console.error('[Collab-Mentions] Failed to load presence data:', error);
             this.presenceData = { presence: [] };
         }
     }
@@ -596,6 +603,10 @@ export class UserManager {
                             user.adminLevel = 'secondary';
                             console.debug('[Collab-Mentions] Demoted duplicate primary admin:', user.vaultName);
                         }
+                    }
+
+                    if (!hasPrimary && this.usersConfig.users.length > 0) {
+                        console.warn('[Collab-Mentions] No primary admin found after merge - registration #1 user may be missing');
                     }
 
                     console.debug('[Collab-Mentions] After merge - users:', this.usersConfig.users.map(u => ({

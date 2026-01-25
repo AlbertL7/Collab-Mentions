@@ -1,5 +1,5 @@
-import { App, ItemView, WorkspaceLeaf, TFile, MarkdownView, FuzzySuggestModal, Notice, Modal, Setting } from 'obsidian';
-import { Mention, UserStatus, ManualStatus, ChatMessage, ChatImage, ChatReaction, Channel, GENERAL_CHANNEL_ID, Reminder, ReminderPriority } from '../types';
+import { App, ItemView, WorkspaceLeaf, TFile, MarkdownView, FuzzySuggestModal, Notice, Modal } from 'obsidian';
+import { Mention, UserStatus, ManualStatus, ChatMessage, ChatImage, Channel, GENERAL_CHANNEL_ID, Reminder, ReminderPriority } from '../types';
 import { MentionParser } from '../mentionParser';
 import { UserManager } from '../userManager';
 import { ChatManager } from '../chatManager';
@@ -1769,6 +1769,10 @@ export class MentionPanelView extends ItemView {
         // If it would go off the top, show below instead
         if (top < 8) {
             top = rect.bottom + 8;
+            // Check if showing below would go off the bottom edge
+            if (top + pickerRect.height > viewportHeight - 8) {
+                top = viewportHeight - pickerRect.height - 8;
+            }
         }
 
         // If it would go off the right edge, align to right side
