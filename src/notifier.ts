@@ -57,60 +57,6 @@ export class Notifier {
     }
 
     /**
-     * Check for unread mentions and notify
-     */
-    async checkAndNotify(playSound: boolean = true): Promise<number> {
-        await Promise.resolve();
-        const unread = this.mentionParser.getUnreadMentions();
-
-        if (unread.length > 0) {
-            if (playSound) {
-                this.playSound();
-            }
-
-            if (unread.length === 1) {
-                const mention = unread[0];
-                this.showNotice(
-                    `📬 New mention from @${mention.from}:\n"${this.truncate(mention.context, 50)}"`,
-                    8000
-                );
-            } else {
-                this.showNotice(
-                    `📬 You have ${unread.length} unread mentions!`,
-                    8000
-                );
-            }
-        }
-
-        return unread.length;
-    }
-
-    /**
-     * Notify about specific new unread mentions (prevents repeat notifications)
-     */
-    async notifyNewUnread(mentions: Mention[], playSound: boolean = true): Promise<void> {
-        await Promise.resolve();
-        if (mentions.length === 0) return;
-
-        if (playSound) {
-            this.playSound();
-        }
-
-        if (mentions.length === 1) {
-            const mention = mentions[0];
-            this.showNotice(
-                `📬 New mention from @${mention.from}:\n"${this.truncate(mention.context, 50)}"`,
-                8000
-            );
-        } else {
-            this.showNotice(
-                `📬 ${mentions.length} new mentions!`,
-                8000
-            );
-        }
-    }
-
-    /**
      * Show startup notification modal with all unread mentions
      */
     showStartupNotifications(unreadMentions: Mention[]): void {
@@ -132,14 +78,6 @@ export class Notifier {
             `📤 Mentioned @${mention.to} in ${this.getFileName(mention.file)}`,
             3000
         );
-    }
-
-    /**
-     * Truncate text to a maximum length
-     */
-    private truncate(text: string, maxLength: number): string {
-        if (text.length <= maxLength) return text;
-        return text.substring(0, maxLength - 3) + '...';
     }
 
     /**

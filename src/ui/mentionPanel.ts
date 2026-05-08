@@ -850,6 +850,15 @@ export class MentionPanelView extends ItemView {
     }
 
     private sortChannels(channels: Channel[], currentUser: string): Channel[] {
+        // Precompute sort keys once per channel (O(n)) instead of recomputing
+        // Date.parse + getMessages on every comparator call (O(n log n)).
+        const keys = new Map<string, number>();
+        for (const ch of channels) {
+            const messages = this.chatManager.getMessages(ch.id);
+            const last = messages[messages.length - 1];
+            const ts = last ? Date.parse(last.timestamp) : Date.parse(ch.createdAt);
+            keys.set(ch.id, ts);
+        }
         return [...channels].sort((a, b) => {
             // General always first
             if (a.id === GENERAL_CHANNEL_ID) return -1;
@@ -859,15 +868,25 @@ export class MentionPanelView extends ItemView {
             if (a.type === 'group' && b.type === 'dm') return -1;
             if (a.type === 'dm' && b.type === 'group') return 1;
 
-            // Sort by most recent message
-            const aMessages = this.chatManager.getMessages(a.id);
-            const bMessages = this.chatManager.getMessages(b.id);
-            const aLastMsg = aMessages[aMessages.length - 1];
-            const bLastMsg = bMessages[bMessages.length - 1];
-            const aTime = aLastMsg ? new Date(aLastMsg.timestamp).getTime() : new Date(a.createdAt).getTime();
-            const bTime = bLastMsg ? new Date(bLastMsg.timestamp).getTime() : new Date(b.createdAt).getTime();
-            return bTime - aTime;
+            return (keys.get(b.id) || 0) - (keys.get(a.id) || 0);
         });
+    }
+
+    /**
+     * Mark the active chat channel as read, but only if the user can actually
+     * see it (panel visible + chat tab active). Idempotent — `chatManager.markAsRead`
+     * skips the disk write when the read pointer is already at the latest message.
+     *
+     * This is the single entry point used by all "user has eyes on this channel"
+     * triggers: render, channel switch, post-send. Keeping it in one place means
+     * the visibility/tab gating is enforced consistently.
+     */
+    private async markActiveChannelRead(): Promise<void> {
+        if (this.activeTab !== 'chat') return;
+        if (this.containerEl.offsetParent === null) return; // panel hidden
+        const activeChannelId = this.chatManager.getActiveChannelId();
+        await this.chatManager.markAsRead(activeChannelId);
+        if (this.onBadgeUpdate) this.onBadgeUpdate();
     }
 
     private async renderMessagePane(container: HTMLElement, currentUser: string): Promise<void> {
@@ -882,11 +901,10 @@ export class MentionPanelView extends ItemView {
             return;
         }
 
-        // Mark as read and update badge
-        await this.chatManager.markAsRead(activeChannelId);
-        if (this.onBadgeUpdate) {
-            this.onBadgeUpdate();
-        }
+        // Fire-and-forget the read marker — gated to "panel visible + chat tab"
+        // inside the helper, and idempotent at the chatManager layer. Not awaited
+        // because rendering shouldn't block on a possible disk write.
+        void this.markActiveChannelRead();
 
         // Channel header
         const headerEl = container.createEl('div', { cls: 'collab-message-header' });
@@ -1168,12 +1186,17 @@ export class MentionPanelView extends ItemView {
             text: 'Jump to latest ↓ '
         });
 
-        // Show/hide jump button based on scroll position
+        // Show/hide jump button based on scroll position — coalesce to one update per frame
+        let scrollRaf: number | null = null;
         messagesEl.addEventListener('scroll', () => {
-            const isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
-            jumpBtn.toggleClass('collab-hidden', isNearBottom);
-            jumpBtn.toggleClass('collab-visible', !isNearBottom);
-        });
+            if (scrollRaf !== null) return;
+            scrollRaf = window.requestAnimationFrame(() => {
+                scrollRaf = null;
+                const isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
+                jumpBtn.toggleClass('collab-hidden', isNearBottom);
+                jumpBtn.toggleClass('collab-visible', !isNearBottom);
+            });
+        }, { passive: true });
 
         jumpBtn.addEventListener('click', () => {
             messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -1363,24 +1386,25 @@ export class MentionPanelView extends ItemView {
             void sendMessage();
         });
 
-        // Track typing status
+        // Track typing status — write at most once per 2s while user is typing
+        // (each call hits presence.json on disk; per-keystroke writes destroy sync perf).
+        let lastTypingWrite = 0;
         textInput.addEventListener('input', () => {
-            void (async () => {
-                const activeChannelId = this.chatManager.getActiveChannelId();
+            const activeChannelId = this.chatManager.getActiveChannelId();
+            const now = Date.now();
+            if (now - lastTypingWrite > 2000) {
+                lastTypingWrite = now;
+                void this.userManager.setTyping(activeChannelId);
+            }
 
-                // Set typing status
-                await this.userManager.setTyping(activeChannelId);
-
-                // Clear typing after 3 seconds of no input
-                if (this.typingTimeout) {
-                    window.clearTimeout(this.typingTimeout);
-                }
-                this.typingTimeout = window.setTimeout(() => {
-                    void (async () => {
-                        await this.userManager.clearTyping();
-                    })();
-                }, 3000);
-            })();
+            // Clear typing after 3 seconds of no input
+            if (this.typingTimeout) {
+                window.clearTimeout(this.typingTimeout);
+            }
+            this.typingTimeout = window.setTimeout(() => {
+                lastTypingWrite = 0;
+                void this.userManager.clearTyping();
+            }, 3000);
         });
 
         textInput.addEventListener('keydown', (e) => {

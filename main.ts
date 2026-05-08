@@ -13,7 +13,7 @@ import {
     Notice
 } from 'obsidian';
 
-import { CollabMentionsSettings, DEFAULT_SETTINGS, Reminder, ChatMessage, VaultUser } from './src/types';
+import { CollabMentionsSettings, DEFAULT_SETTINGS, Reminder, ChatMessage, VaultUser, Mention } from './src/types';
 import { UserManager } from './src/userManager';
 import { MentionParser } from './src/mentionParser';
 import { ChatManager } from './src/chatManager';
@@ -46,27 +46,54 @@ export default class CollabMentionsPlugin extends Plugin {
     private notifiedMessageHashes: Set<string> = new Set();  // Track message content hashes for notification dedup
     private notifiedReminderIds: Set<string> = new Set();  // Track already-notified reminders
     private lastCleanupTime: number = 0;  // Track last cleanup time
+    // Cached stat-key + hash per file path — lets us skip re-reading unchanged files
+    private fileStatKeys: Map<string, string> = new Map();
+    private fileHashes: Map<string, string> = new Map();
+    private fileWatcherTickCount: number = 0;
+    private notificationHost: HTMLElement | null = null;
+    private deferredLoadsPromise: Promise<unknown> = Promise.resolve();
+    /** vault.on('modify') events before this timestamp are ignored. Drive sync at
+     *  vault-open fires a flood of modify events for pre-existing files; processing
+     *  them all reads + regex-scans every file and competes with Obsidian's
+     *  own indexing. New mentions from *other* users arrive via mentions.json
+     *  (caught by the file watcher), so skipping markdown sync events is safe. */
+    private modifyHandlerReadyAt: number = 0;
 
     async onload(): Promise<void> {
         console.debug('Loading Collab Mentions plugin');
 
-        await this.loadSettings();
-        // Ensure settings file exists (creates data.json if missing)
-        await this.saveSettings();
-
-        // Initialize managers
+        // Construct managers eagerly (sync; just sets up empty state). Anything
+        // that holds a reference — registerView, registerEditorSuggest — gets
+        // a valid object even before its file has loaded.
         this.userManager = new UserManager(this.app);
-        await this.userManager.loadUsers();
+        this.mentionParser = new MentionParser(this.app, this.userManager);
+        this.chatManager = new ChatManager(this.app, this.userManager);
+        this.reminderManager = new ReminderManager(this.app, this.userManager);
+
+        // CRITICAL PATH — only what the ribbon icon + commands need before
+        // onload returns: settings (for feature flags), users (for isRegistered),
+        // mentions (for the ribbon badge count). Run them in parallel.
+        await Promise.all([
+            this.loadSettings(),
+            this.userManager.loadUsers(),
+            this.mentionParser.loadMentions(),
+        ]);
         this.userManager.identifyCurrentUser();
 
-        this.mentionParser = new MentionParser(this.app, this.userManager);
-        await this.mentionParser.loadMentions();
-
-        this.chatManager = new ChatManager(this.app, this.userManager);
-        await this.chatManager.loadChat();
-
-        this.reminderManager = new ReminderManager(this.app, this.userManager);
-        await this.reminderManager.loadReminders();
+        // DEFERRED — chat.json and reminders.json kicked off in the background.
+        // Tracked as a promise so the 3 s startup-notification batch and the
+        // file watcher / heartbeat startup can wait on them rather than racing.
+        this.deferredLoadsPromise = Promise.all([
+            this.chatManager.loadChat(),
+            this.reminderManager.loadReminders(),
+        ]).then(() => {
+            // If Obsidian restored our panel during vault-open, it rendered
+            // before chat data finished loading. Refresh it now that data is in.
+            this.refreshPanel();
+            this.updateRibbonBadge();
+        }).catch(e => {
+            console.error('[Collab-Mentions] Deferred load failed:', e);
+        });
 
         // Set up reminder notification callback
         this.reminderManager.setOnReminderDue((reminder: Reminder) => {
@@ -107,6 +134,12 @@ export default class CollabMentionsPlugin extends Plugin {
         this.ribbonIconEl.addClass('collab-ribbon-icon');
         const badgeEl = this.ribbonIconEl.createEl('span', { cls: 'collab-ribbon-badge collab-hidden' });
 
+        // Plugin-owned host for centered notifications. Lives at body level so it
+        // can position above the workspace, but everything inside is scoped under
+        // .collab-mentions-host so theme rules can't accidentally bleed in, and
+        // onunload removes the whole subtree in one shot.
+        this.notificationHost = document.body.createDiv({ cls: 'collab-mentions-host' });
+
         // Add commands
         this.addCommand({
             id: 'open-mentions-panel',
@@ -141,11 +174,12 @@ export default class CollabMentionsPlugin extends Plugin {
             name: 'Check for new mentions',
             callback: async () => {
                 await this.mentionParser.loadMentions();
-                const count = await this.notifier.checkAndNotify(this.settings.notificationSound);
-
-                if (count === 0) {
+                const unread = this.mentionParser.getUnreadMentions();
+                if (unread.length === 0) {
                     this.notifier.showNotice('No new mentions');
+                    return;
                 }
+                this.notifyAboutNewMentions(unread);
             }
         });
 
@@ -190,8 +224,15 @@ export default class CollabMentionsPlugin extends Plugin {
             true
         );
 
+        // 10-second grace window after onload during which we ignore modify
+        // events. This skips the burst of Drive-sync events fired during
+        // Obsidian's vault-opening phase without losing real edits the user
+        // makes themselves (they aren't editing in the first 10s anyway).
+        this.modifyHandlerReadyAt = Date.now() + 10000;
+
         this.registerEvent(
             this.app.vault.on('modify', (file) => {
+                if (Date.now() < this.modifyHandlerReadyAt) return;
                 if (file instanceof TFile && file.extension === 'md') {
                     // Immediate processing via debounce (first edit processed right away)
                     debouncedProcessFile(file);
@@ -229,9 +270,8 @@ export default class CollabMentionsPlugin extends Plugin {
         if (this.userManager.isRegistered() && this.settings.enableNotifications) {
             setTimeout(() => {
                 void (async () => {
-                    await this.mentionParser.loadMentions();
-                    await this.chatManager.loadChat();
-                    await this.reminderManager.loadReminders();
+                    // Wait for deferred chat/reminder loads before reading them.
+                    await this.deferredLoadsPromise;
 
                     const currentUser = this.userManager.getCurrentUser();
                     if (!currentUser) return;
@@ -320,8 +360,8 @@ export default class CollabMentionsPlugin extends Plugin {
                         }
                     }
 
-                    // Start periodic reminder checking (every 5 seconds for responsive notifications)
-                    this.reminderManager.startPeriodicCheck(5000);
+                    // Start periodic reminder checking (every 30s — sub-minute precision is unnecessary for reminders)
+                    this.reminderManager.startPeriodicCheck(30000);
 
                     // Run initial auto-cleanup
                     if (this.settings.autoCleanup) {
@@ -337,18 +377,19 @@ export default class CollabMentionsPlugin extends Plugin {
             }, 3000);
         }
 
-        // Start file watcher if enabled
-        if (this.settings.enableFileWatcher && this.userManager.isRegistered()) {
-            this.startFileWatcher();
-        }
-
-        // Start heartbeat for presence tracking
+        // File watcher and heartbeat both depend on chat data being loaded
+        // (the watcher iterates channels/messages to seed its tracking sets;
+        // the heartbeat triggers an immediate presence write). Defer both until
+        // after the background chat/reminder loads finish so onload returns ASAP.
         if (this.userManager.isRegistered()) {
-            this.startHeartbeat();
-        }
-
-        // Show registration prompt if not registered
-        if (!this.userManager.isRegistered()) {
+            void this.deferredLoadsPromise.then(() => {
+                if (this.settings.enableFileWatcher) {
+                    this.startFileWatcher();
+                }
+                this.startHeartbeat();
+            });
+        } else {
+            // Show registration prompt if not registered
             setTimeout(() => {
                 this.notifier.showNotice(
                     '👋 Welcome to Collab Mentions! Click the @ icon to register.',
@@ -364,6 +405,15 @@ export default class CollabMentionsPlugin extends Plugin {
         this.stopHeartbeat();
         this.stopCleanupInterval();
         this.reminderManager.stopPeriodicCheck();
+        if (this.refreshPanelTimeout !== null) {
+            window.clearTimeout(this.refreshPanelTimeout);
+            this.refreshPanelTimeout = null;
+        }
+        this.clearAllNotifications();
+        if (this.notificationHost) {
+            this.notificationHost.remove();
+            this.notificationHost = null;
+        }
         // Clear presence so we show as offline
         void (async () => {
             await this.userManager.clearPresence();
@@ -384,8 +434,8 @@ export default class CollabMentionsPlugin extends Plugin {
         // Start heartbeat for presence tracking
         this.startHeartbeat();
 
-        // Start periodic reminder checking (every 5 seconds for responsive notifications)
-        this.reminderManager.startPeriodicCheck(5000);
+        // Start periodic reminder checking (every 30s — sub-minute precision is unnecessary for reminders)
+        this.reminderManager.startPeriodicCheck(30000);
 
         // Start periodic cleanup of notification tracking
         this.startCleanupInterval();
@@ -458,6 +508,9 @@ export default class CollabMentionsPlugin extends Plugin {
                     void view.switchToChannel(options.channelId);
                 } else if (options?.tab) {
                     void view.switchToTab(options.tab);
+                } else if (view.render) {
+                    // Re-render on reveal in case panel was hidden during recent file changes
+                    void view.render();
                 }
             }
         }
@@ -487,21 +540,41 @@ export default class CollabMentionsPlugin extends Plugin {
         await this.activateMentionPanel();
     }
 
+    private refreshPanelTimeout: number | null = null;
+    private pendingFullRefresh: boolean = false;
+
     refreshPanel(smartRefresh: boolean = false): void {
+        // Coalesce bursts of refresh calls (e.g., multiple file changes in one watcher tick)
+        // into one render on the next tick. If any caller wants a full refresh, that wins.
+        if (!smartRefresh) {
+            this.pendingFullRefresh = true;
+        }
+        if (this.refreshPanelTimeout !== null) return;
+        this.refreshPanelTimeout = window.setTimeout(() => {
+            this.refreshPanelTimeout = null;
+            const fullRefresh = this.pendingFullRefresh;
+            this.pendingFullRefresh = false;
+            this.doRefreshPanel(!fullRefresh);
+        }, 50);
+    }
+
+    private doRefreshPanel(smartRefresh: boolean): void {
         const leaves = this.app.workspace.getLeavesOfType(MENTION_PANEL_VIEW_TYPE);
         for (const leaf of leaves) {
             const view = leaf.view as MentionPanelView;
-            if (view) {
-                if (smartRefresh && view.refreshChat) {
-                    // Smart refresh - only update chat messages without re-rendering input
-                    void view.refreshChat();
-                } else if (view.render) {
-                    // Full refresh
-                    void view.render();
-                }
+            if (!view) continue;
+            // Skip rendering if the panel isn't actually visible — saves a lot of work
+            // when users keep the right sidebar collapsed. The view will be re-rendered
+            // when it becomes visible via activateMentionPanel / setViewState.
+            const isVisible = (view.containerEl as HTMLElement)?.offsetParent !== null;
+            if (!isVisible) continue;
+            if (smartRefresh && view.refreshChat) {
+                void view.refreshChat();
+            } else if (view.render) {
+                void view.render();
             }
         }
-        // Update badge whenever panel refreshes
+        // Always update badge — it's a separate DOM element on the ribbon and is cheap
         this.updateRibbonBadge();
     }
 
@@ -556,19 +629,35 @@ export default class CollabMentionsPlugin extends Plugin {
     }
 
     /**
+     * Cheap stat-based change detection: only re-reads + hashes when mtime/size differ.
+     * Avoids reading the entire JSON every poll for files that haven't changed.
+     */
+    private async getFileHashCached(path: string): Promise<string | null> {
+        try {
+            const adapter = this.app.vault.adapter;
+            const stat = await adapter.stat(path);
+            if (!stat) return null;
+            const statKey = `${stat.mtime}-${stat.size}`;
+            const cachedKey = this.fileStatKeys.get(path);
+            if (cachedKey === statKey) {
+                return this.fileHashes.get(path) ?? null;
+            }
+            const content = await adapter.read(path);
+            const hash = this.computeContentHash(content);
+            this.fileStatKeys.set(path, statKey);
+            this.fileHashes.set(path, hash);
+            return hash;
+        } catch (e) {
+            // File may not exist yet — return null (caller already handles)
+            return null;
+        }
+    }
+
+    /**
      * FILE WATCHER - Detect changes to mentions.json while vault is open
      */
     private async getMentionsFileHash(): Promise<string | null> {
-        try {
-            const mentionsPath = this.mentionParser.getMentionsFilePath();
-            if (await this.app.vault.adapter.exists(mentionsPath)) {
-                const content = await this.app.vault.adapter.read(mentionsPath);
-                return this.computeContentHash(content);
-            }
-        } catch (e) {
-            console.error('Failed to get mentions file hash:', e);
-        }
-        return null;
+        return this.getFileHashCached(this.mentionParser.getMentionsFilePath());
     }
 
     private async checkForMentionsFileChanges(): Promise<void> {
@@ -614,37 +703,7 @@ export default class CollabMentionsPlugin extends Plugin {
                 this.notifiedContentHashes.add(contentHash);
             }
 
-            if (newUnread.length > 0 && this.settings.enableNotifications) {
-                console.debug('[Collab-Mentions] New unread mentions to notify:', newUnread.length);
-
-                // Batch notifications when there are many to prevent notification storm
-                if (newUnread.length > 3) {
-                    // Show single batched notification
-                    const uniqueSenders = [...new Set(newUnread.map(m => m.from))];
-                    const senderText = uniqueSenders.length === 1
-                        ? `from @${uniqueSenders[0]}`
-                        : `from ${uniqueSenders.length} people`;
-                    this.showCenteredNotification(
-                        '📣 New Mentions',
-                        `You have ${newUnread.length} new mentions ${senderText}`,
-                        () => { void this.activateMentionPanel({ tab: 'inbox' }); }
-                    );
-                } else {
-                    // Show individual notifications for small batches (1-3)
-                    for (const mention of newUnread) {
-                        this.showCenteredNotification(
-                            '📣 New Mention',
-                            `@${mention.from} mentioned you: "${this.truncateText(mention.context, 50)}"`,
-                            () => { void this.activateMentionPanel({ tab: 'inbox' }); }
-                        );
-                    }
-                }
-
-                // Only play sound once regardless of number of notifications
-                if (this.settings.notificationSound) {
-                    this.notifier.playSound();
-                }
-            }
+            this.notifyAboutNewMentions(newUnread);
 
             // Smart refresh the panel to show any updates (preserves input focus)
             this.refreshPanel(true);
@@ -662,16 +721,7 @@ export default class CollabMentionsPlugin extends Plugin {
     }
 
     private async getChatFileHash(): Promise<string | null> {
-        try {
-            const chatPath = this.chatManager.getChatFilePath();
-            if (await this.app.vault.adapter.exists(chatPath)) {
-                const content = await this.app.vault.adapter.read(chatPath);
-                return this.computeContentHash(content);
-            }
-        } catch (e) {
-            console.error('Failed to get chat file hash:', e);
-        }
-        return null;
+        return this.getFileHashCached(this.chatManager.getChatFilePath());
     }
 
     private async checkForChatFileChanges(): Promise<void> {
@@ -857,16 +907,7 @@ export default class CollabMentionsPlugin extends Plugin {
     }
 
     private async getUsersFileHash(): Promise<string | null> {
-        try {
-            const usersPath = this.userManager.getUsersFilePath();
-            if (await this.app.vault.adapter.exists(usersPath)) {
-                const content = await this.app.vault.adapter.read(usersPath);
-                return this.computeContentHash(content);
-            }
-        } catch (e) {
-            console.error('Failed to get users file hash:', e);
-        }
-        return null;
+        return this.getFileHashCached(this.userManager.getUsersFilePath());
     }
 
     private async checkForUsersFileChanges(): Promise<void> {
@@ -893,16 +934,7 @@ export default class CollabMentionsPlugin extends Plugin {
     }
 
     private async getRemindersFileHash(): Promise<string | null> {
-        try {
-            const remindersPath = this.reminderManager.getRemindersFilePath();
-            if (await this.app.vault.adapter.exists(remindersPath)) {
-                const content = await this.app.vault.adapter.read(remindersPath);
-                return this.computeContentHash(content);
-            }
-        } catch (e) {
-            console.error('Failed to get reminders file hash:', e);
-        }
-        return null;
+        return this.getFileHashCached(this.reminderManager.getRemindersFilePath());
     }
 
     private async checkForRemindersFileChanges(): Promise<void> {
@@ -942,9 +974,69 @@ export default class CollabMentionsPlugin extends Plugin {
      * Show a centered notification modal (stacks multiple notifications)
      */
     private activeNotifications: HTMLElement[] = [];
+    private notificationTimers: Map<HTMLElement, number> = new Map();
+    private recentNotificationKeys: Map<string, number> = new Map();
+
+    /**
+     * Single entry point for "tell the user about these unread mentions".
+     * Handles batching (1–3 individual modals, 4+ collapsed to one), sound
+     * (once per call), and dedupe-set bookkeeping so the file watcher won't
+     * re-notify for the same mentions later.
+     */
+    private notifyAboutNewMentions(mentions: Mention[]): void {
+        if (mentions.length === 0) return;
+
+        // Always record into dedupe sets, even if notifications are disabled —
+        // otherwise toggling notifications back on would replay every mention.
+        for (const m of mentions) {
+            this.notifiedMentionIds.add(m.id);
+            this.notifiedContentHashes.add(this.mentionParser.getMentionContentHash(m));
+        }
+
+        if (!this.settings.enableNotifications) return;
+
+        if (mentions.length > 3) {
+            const uniqueSenders = [...new Set(mentions.map(m => m.from))];
+            const senderText = uniqueSenders.length === 1
+                ? `from @${uniqueSenders[0]}`
+                : `from ${uniqueSenders.length} people`;
+            this.showCenteredNotification(
+                '📣 New Mentions',
+                `You have ${mentions.length} new mentions ${senderText}`,
+                () => { void this.activateMentionPanel({ tab: 'inbox' }); }
+            );
+        } else {
+            for (const mention of mentions) {
+                this.showCenteredNotification(
+                    '📣 New Mention',
+                    `@${mention.from} mentioned you: "${this.truncateText(mention.context, 50)}"`,
+                    () => { void this.activateMentionPanel({ tab: 'inbox' }); }
+                );
+            }
+        }
+
+        if (this.settings.notificationSound) {
+            this.notifier.playSound();
+        }
+    }
 
     private showCenteredNotification(title: string, message: string, onClick?: () => void): void {
-        console.debug('[Collab-Mentions] showCenteredNotification called:', title, message);
+        // Dedupe: suppress identical title+message shown within the last 5s.
+        // Two parallel notify paths (startup batch + file watcher) used to fire
+        // for the same event, double-stacking modals on top of each other.
+        const key = `${title} ${message}`;
+        const now = Date.now();
+        const lastShown = this.recentNotificationKeys.get(key);
+        if (lastShown !== undefined && now - lastShown < 5000) {
+            return;
+        }
+        this.recentNotificationKeys.set(key, now);
+        // Trim old keys (keep map bounded)
+        if (this.recentNotificationKeys.size > 50) {
+            for (const [k, t] of this.recentNotificationKeys) {
+                if (now - t > 60000) this.recentNotificationKeys.delete(k);
+            }
+        }
 
         // Create notification container (not full overlay - allows stacking)
         const notification = document.createElement('div');
@@ -988,15 +1080,22 @@ export default class CollabMentionsPlugin extends Plugin {
         // Track this notification
         this.activeNotifications.push(notification);
 
-        // Auto-dismiss after 10 seconds
-        setTimeout(() => {
+        // Auto-dismiss after 10s — track timer so manual dismiss can clear it
+        const timer = window.setTimeout(() => {
+            this.notificationTimers.delete(notification);
             this.removeNotification(notification);
         }, 10000);
+        this.notificationTimers.set(notification, timer);
 
-        document.body.appendChild(notification);
+        (this.notificationHost ?? document.body).appendChild(notification);
     }
 
     private removeNotification(notification: HTMLElement): void {
+        const timer = this.notificationTimers.get(notification);
+        if (timer !== undefined) {
+            window.clearTimeout(timer);
+            this.notificationTimers.delete(notification);
+        }
         if (notification.parentNode) {
             notification.remove();
         }
@@ -1011,6 +1110,18 @@ export default class CollabMentionsPlugin extends Plugin {
         });
     }
 
+    private clearAllNotifications(): void {
+        for (const timer of this.notificationTimers.values()) {
+            window.clearTimeout(timer);
+        }
+        this.notificationTimers.clear();
+        for (const n of this.activeNotifications) {
+            if (n.parentNode) n.remove();
+        }
+        this.activeNotifications = [];
+        this.recentNotificationKeys.clear();
+    }
+
     private truncateText(text: string, maxLength: number): string {
         if (text.length <= maxLength) return text;
         return text.substring(0, maxLength - 3) + '...';
@@ -1023,17 +1134,21 @@ export default class CollabMentionsPlugin extends Plugin {
 
         console.debug('Starting mentions file watcher...');
 
-        // Check every 3 seconds for real-time updates
+        // Poll every 8s. Each tick uses adapter.stat() to skip files whose mtime/size
+        // haven't changed — so the typical idle cost is 4 cheap stat() calls, not 4 reads.
+        // Presence (other users' online status) reloads every 4th tick (~32s).
         this.fileWatcherInterval = window.setInterval(() => {
             void (async () => {
+                this.fileWatcherTickCount++;
                 await this.checkForMentionsFileChanges();
                 await this.checkForChatFileChanges();
                 await this.checkForUsersFileChanges();
                 await this.checkForRemindersFileChanges();
-                // Also reload presence data to check other users' online status
-                await this.userManager.loadPresence();
+                if (this.fileWatcherTickCount % 4 === 0) {
+                    await this.userManager.loadPresence();
+                }
             })();
-        }, 3000);
+        }, 8000);
 
         // Initial hashes - initialize ALL file hashes
         void this.getMentionsFileHash().then(hash => {

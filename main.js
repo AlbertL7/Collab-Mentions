@@ -2748,17 +2748,35 @@ Reactions: ${reactions}
   }
   // ==================== Read State Management ====================
   /**
-   * Mark a channel as read for current user
+   * Mark a channel as read for current user.
+   *
+   * Only writes to disk if the read state actually moves forward — otherwise
+   * every panel render would rewrite chat.json and trigger a Drive sync upload
+   * to every team member, even when there's nothing new to read.
    */
   async markAsRead(channelId) {
+    var _a;
     const currentUser = this.userManager.getCurrentUser();
     if (!currentUser)
       return;
     const targetChannel = channelId || this.activeChannelId;
+    const messages = this.chatData.channelMessages[targetChannel] || [];
+    let latestTs = 0;
+    for (const m of messages) {
+      if (m.from === "system" || m.deleted)
+        continue;
+      const t = Date.parse(m.timestamp);
+      if (t > latestTs)
+        latestTs = t;
+    }
+    const existing = (_a = this.chatData.readState[targetChannel]) == null ? void 0 : _a[currentUser.vaultName];
+    const existingTs = existing ? Date.parse(existing) : 0;
+    if (latestTs === 0 || existingTs >= latestTs)
+      return;
     if (!this.chatData.readState[targetChannel]) {
       this.chatData.readState[targetChannel] = {};
     }
-    this.chatData.readState[targetChannel][currentUser.vaultName] = new Date().toISOString();
+    this.chatData.readState[targetChannel][currentUser.vaultName] = new Date(latestTs).toISOString();
     await this.saveChat();
   }
   /**
@@ -3509,56 +3527,6 @@ var Notifier = class {
     }
   }
   /**
-   * Check for unread mentions and notify
-   */
-  async checkAndNotify(playSound = true) {
-    await Promise.resolve();
-    const unread = this.mentionParser.getUnreadMentions();
-    if (unread.length > 0) {
-      if (playSound) {
-        this.playSound();
-      }
-      if (unread.length === 1) {
-        const mention = unread[0];
-        this.showNotice(
-          `\u{1F4EC} New mention from @${mention.from}:
-"${this.truncate(mention.context, 50)}"`,
-          8e3
-        );
-      } else {
-        this.showNotice(
-          `\u{1F4EC} You have ${unread.length} unread mentions!`,
-          8e3
-        );
-      }
-    }
-    return unread.length;
-  }
-  /**
-   * Notify about specific new unread mentions (prevents repeat notifications)
-   */
-  async notifyNewUnread(mentions, playSound = true) {
-    await Promise.resolve();
-    if (mentions.length === 0)
-      return;
-    if (playSound) {
-      this.playSound();
-    }
-    if (mentions.length === 1) {
-      const mention = mentions[0];
-      this.showNotice(
-        `\u{1F4EC} New mention from @${mention.from}:
-"${this.truncate(mention.context, 50)}"`,
-        8e3
-      );
-    } else {
-      this.showNotice(
-        `\u{1F4EC} ${mentions.length} new mentions!`,
-        8e3
-      );
-    }
-  }
-  /**
    * Show startup notification modal with all unread mentions
    */
   showStartupNotifications(unreadMentions) {
@@ -3579,14 +3547,6 @@ var Notifier = class {
       `\u{1F4E4} Mentioned @${mention.to} in ${this.getFileName(mention.file)}`,
       3e3
     );
-  }
-  /**
-   * Truncate text to a maximum length
-   */
-  truncate(text, maxLength) {
-    if (text.length <= maxLength)
-      return text;
-    return text.substring(0, maxLength - 3) + "...";
   }
   /**
    * Get just the filename from a path
@@ -4620,6 +4580,13 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     });
   }
   sortChannels(channels, currentUser) {
+    const keys = /* @__PURE__ */ new Map();
+    for (const ch of channels) {
+      const messages = this.chatManager.getMessages(ch.id);
+      const last = messages[messages.length - 1];
+      const ts = last ? Date.parse(last.timestamp) : Date.parse(ch.createdAt);
+      keys.set(ch.id, ts);
+    }
     return [...channels].sort((a, b) => {
       if (a.id === GENERAL_CHANNEL_ID)
         return -1;
@@ -4629,14 +4596,27 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
         return -1;
       if (a.type === "dm" && b.type === "group")
         return 1;
-      const aMessages = this.chatManager.getMessages(a.id);
-      const bMessages = this.chatManager.getMessages(b.id);
-      const aLastMsg = aMessages[aMessages.length - 1];
-      const bLastMsg = bMessages[bMessages.length - 1];
-      const aTime = aLastMsg ? new Date(aLastMsg.timestamp).getTime() : new Date(a.createdAt).getTime();
-      const bTime = bLastMsg ? new Date(bLastMsg.timestamp).getTime() : new Date(b.createdAt).getTime();
-      return bTime - aTime;
+      return (keys.get(b.id) || 0) - (keys.get(a.id) || 0);
     });
+  }
+  /**
+   * Mark the active chat channel as read, but only if the user can actually
+   * see it (panel visible + chat tab active). Idempotent — `chatManager.markAsRead`
+   * skips the disk write when the read pointer is already at the latest message.
+   *
+   * This is the single entry point used by all "user has eyes on this channel"
+   * triggers: render, channel switch, post-send. Keeping it in one place means
+   * the visibility/tab gating is enforced consistently.
+   */
+  async markActiveChannelRead() {
+    if (this.activeTab !== "chat")
+      return;
+    if (this.containerEl.offsetParent === null)
+      return;
+    const activeChannelId = this.chatManager.getActiveChannelId();
+    await this.chatManager.markAsRead(activeChannelId);
+    if (this.onBadgeUpdate)
+      this.onBadgeUpdate();
   }
   async renderMessagePane(container, currentUser) {
     const activeChannelId = this.chatManager.getActiveChannelId();
@@ -4648,10 +4628,7 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       });
       return;
     }
-    await this.chatManager.markAsRead(activeChannelId);
-    if (this.onBadgeUpdate) {
-      this.onBadgeUpdate();
-    }
+    void this.markActiveChannelRead();
     const headerEl = container.createEl("div", { cls: "collab-message-header" });
     const titleEl = headerEl.createEl("h3", { cls: "collab-message-title" });
     if (channel.type === "dm") {
@@ -4882,11 +4859,17 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
       cls: "collab-jump-to-bottom collab-hidden",
       text: "Jump to latest \u2193 "
     });
+    let scrollRaf = null;
     messagesEl.addEventListener("scroll", () => {
-      const isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
-      jumpBtn.toggleClass("collab-hidden", isNearBottom);
-      jumpBtn.toggleClass("collab-visible", !isNearBottom);
-    });
+      if (scrollRaf !== null)
+        return;
+      scrollRaf = window.requestAnimationFrame(() => {
+        scrollRaf = null;
+        const isNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
+        jumpBtn.toggleClass("collab-hidden", isNearBottom);
+        jumpBtn.toggleClass("collab-visible", !isNearBottom);
+      });
+    }, { passive: true });
     jumpBtn.addEventListener("click", () => {
       messagesEl.scrollTop = messagesEl.scrollHeight;
       jumpBtn.addClass("collab-hidden");
@@ -5041,19 +5024,21 @@ var MentionPanelView = class extends import_obsidian4.ItemView {
     sendBtn.addEventListener("click", () => {
       void sendMessage();
     });
+    let lastTypingWrite = 0;
     textInput.addEventListener("input", () => {
-      void (async () => {
-        const activeChannelId = this.chatManager.getActiveChannelId();
-        await this.userManager.setTyping(activeChannelId);
-        if (this.typingTimeout) {
-          window.clearTimeout(this.typingTimeout);
-        }
-        this.typingTimeout = window.setTimeout(() => {
-          void (async () => {
-            await this.userManager.clearTyping();
-          })();
-        }, 3e3);
-      })();
+      const activeChannelId = this.chatManager.getActiveChannelId();
+      const now = Date.now();
+      if (now - lastTypingWrite > 2e3) {
+        lastTypingWrite = now;
+        void this.userManager.setTyping(activeChannelId);
+      }
+      if (this.typingTimeout) {
+        window.clearTimeout(this.typingTimeout);
+      }
+      this.typingTimeout = window.setTimeout(() => {
+        lastTypingWrite = 0;
+        void this.userManager.clearTyping();
+      }, 3e3);
     });
     textInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -6623,25 +6608,49 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     this.notifiedReminderIds = /* @__PURE__ */ new Set();
     // Track already-notified reminders
     this.lastCleanupTime = 0;
+    // Track last cleanup time
+    // Cached stat-key + hash per file path — lets us skip re-reading unchanged files
+    this.fileStatKeys = /* @__PURE__ */ new Map();
+    this.fileHashes = /* @__PURE__ */ new Map();
+    this.fileWatcherTickCount = 0;
+    this.notificationHost = null;
+    this.deferredLoadsPromise = Promise.resolve();
+    /** vault.on('modify') events before this timestamp are ignored. Drive sync at
+     *  vault-open fires a flood of modify events for pre-existing files; processing
+     *  them all reads + regex-scans every file and competes with Obsidian's
+     *  own indexing. New mentions from *other* users arrive via mentions.json
+     *  (caught by the file watcher), so skipping markdown sync events is safe. */
+    this.modifyHandlerReadyAt = 0;
+    this.refreshPanelTimeout = null;
+    this.pendingFullRefresh = false;
     /**
      * Show a centered notification modal (stacks multiple notifications)
      */
     this.activeNotifications = [];
+    this.notificationTimers = /* @__PURE__ */ new Map();
+    this.recentNotificationKeys = /* @__PURE__ */ new Map();
   }
-  // Track last cleanup time
   async onload() {
     console.debug("Loading Collab Mentions plugin");
-    await this.loadSettings();
-    await this.saveSettings();
     this.userManager = new UserManager(this.app);
-    await this.userManager.loadUsers();
-    this.userManager.identifyCurrentUser();
     this.mentionParser = new MentionParser(this.app, this.userManager);
-    await this.mentionParser.loadMentions();
     this.chatManager = new ChatManager(this.app, this.userManager);
-    await this.chatManager.loadChat();
     this.reminderManager = new ReminderManager(this.app, this.userManager);
-    await this.reminderManager.loadReminders();
+    await Promise.all([
+      this.loadSettings(),
+      this.userManager.loadUsers(),
+      this.mentionParser.loadMentions()
+    ]);
+    this.userManager.identifyCurrentUser();
+    this.deferredLoadsPromise = Promise.all([
+      this.chatManager.loadChat(),
+      this.reminderManager.loadReminders()
+    ]).then(() => {
+      this.refreshPanel();
+      this.updateRibbonBadge();
+    }).catch((e) => {
+      console.error("[Collab-Mentions] Deferred load failed:", e);
+    });
     this.reminderManager.setOnReminderDue((reminder) => {
       this.showReminderNotification(reminder);
     });
@@ -6671,6 +6680,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     });
     this.ribbonIconEl.addClass("collab-ribbon-icon");
     const badgeEl = this.ribbonIconEl.createEl("span", { cls: "collab-ribbon-badge collab-hidden" });
+    this.notificationHost = document.body.createDiv({ cls: "collab-mentions-host" });
     this.addCommand({
       id: "open-mentions-panel",
       name: "Open mentions panel",
@@ -6702,10 +6712,12 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       name: "Check for new mentions",
       callback: async () => {
         await this.mentionParser.loadMentions();
-        const count = await this.notifier.checkAndNotify(this.settings.notificationSound);
-        if (count === 0) {
+        const unread = this.mentionParser.getUnreadMentions();
+        if (unread.length === 0) {
           this.notifier.showNotice("No new mentions");
+          return;
         }
+        this.notifyAboutNewMentions(unread);
       }
     });
     this.addCommand({
@@ -6739,8 +6751,11 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       1e3,
       true
     );
+    this.modifyHandlerReadyAt = Date.now() + 1e4;
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
+        if (Date.now() < this.modifyHandlerReadyAt)
+          return;
         if (file instanceof import_obsidian5.TFile && file.extension === "md") {
           debouncedProcessFile(file);
           pendingFiles.set(file.path, file);
@@ -6766,9 +6781,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     if (this.userManager.isRegistered() && this.settings.enableNotifications) {
       setTimeout(() => {
         void (async () => {
-          await this.mentionParser.loadMentions();
-          await this.chatManager.loadChat();
-          await this.reminderManager.loadReminders();
+          await this.deferredLoadsPromise;
           const currentUser = this.userManager.getCurrentUser();
           if (!currentUser)
             return;
@@ -6830,7 +6843,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
               this.notifiedReminderIds.add(reminder.id);
             }
           }
-          this.reminderManager.startPeriodicCheck(5e3);
+          this.reminderManager.startPeriodicCheck(3e4);
           if (this.settings.autoCleanup) {
             await this.mentionParser.autoCleanupMentions(
               this.settings.maxMentionsPerUser,
@@ -6841,13 +6854,14 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
         })();
       }, 3e3);
     }
-    if (this.settings.enableFileWatcher && this.userManager.isRegistered()) {
-      this.startFileWatcher();
-    }
     if (this.userManager.isRegistered()) {
-      this.startHeartbeat();
-    }
-    if (!this.userManager.isRegistered()) {
+      void this.deferredLoadsPromise.then(() => {
+        if (this.settings.enableFileWatcher) {
+          this.startFileWatcher();
+        }
+        this.startHeartbeat();
+      });
+    } else {
       setTimeout(() => {
         this.notifier.showNotice(
           "\u{1F44B} Welcome to Collab Mentions! Click the @ icon to register.",
@@ -6862,6 +6876,15 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     this.stopHeartbeat();
     this.stopCleanupInterval();
     this.reminderManager.stopPeriodicCheck();
+    if (this.refreshPanelTimeout !== null) {
+      window.clearTimeout(this.refreshPanelTimeout);
+      this.refreshPanelTimeout = null;
+    }
+    this.clearAllNotifications();
+    if (this.notificationHost) {
+      this.notificationHost.remove();
+      this.notificationHost = null;
+    }
     void (async () => {
       await this.userManager.clearPresence();
     })();
@@ -6875,7 +6898,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       this.startFileWatcher();
     }
     this.startHeartbeat();
-    this.reminderManager.startPeriodicCheck(5e3);
+    this.reminderManager.startPeriodicCheck(3e4);
     this.startCleanupInterval();
     this.refreshPanel();
   }
@@ -6925,6 +6948,8 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
           void view.switchToChannel(options.channelId);
         } else if (options == null ? void 0 : options.tab) {
           void view.switchToTab(options.tab);
+        } else if (view.render) {
+          void view.render();
         }
       }
     }
@@ -6946,15 +6971,32 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     await this.activateMentionPanel();
   }
   refreshPanel(smartRefresh = false) {
+    if (!smartRefresh) {
+      this.pendingFullRefresh = true;
+    }
+    if (this.refreshPanelTimeout !== null)
+      return;
+    this.refreshPanelTimeout = window.setTimeout(() => {
+      this.refreshPanelTimeout = null;
+      const fullRefresh = this.pendingFullRefresh;
+      this.pendingFullRefresh = false;
+      this.doRefreshPanel(!fullRefresh);
+    }, 50);
+  }
+  doRefreshPanel(smartRefresh) {
+    var _a;
     const leaves = this.app.workspace.getLeavesOfType(MENTION_PANEL_VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view;
-      if (view) {
-        if (smartRefresh && view.refreshChat) {
-          void view.refreshChat();
-        } else if (view.render) {
-          void view.render();
-        }
+      if (!view)
+        continue;
+      const isVisible = ((_a = view.containerEl) == null ? void 0 : _a.offsetParent) !== null;
+      if (!isVisible)
+        continue;
+      if (smartRefresh && view.refreshChat) {
+        void view.refreshChat();
+      } else if (view.render) {
+        void view.render();
       }
     }
     this.updateRibbonBadge();
@@ -7003,19 +7045,35 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     return hash.toString(16);
   }
   /**
+   * Cheap stat-based change detection: only re-reads + hashes when mtime/size differ.
+   * Avoids reading the entire JSON every poll for files that haven't changed.
+   */
+  async getFileHashCached(path) {
+    var _a;
+    try {
+      const adapter = this.app.vault.adapter;
+      const stat = await adapter.stat(path);
+      if (!stat)
+        return null;
+      const statKey = `${stat.mtime}-${stat.size}`;
+      const cachedKey = this.fileStatKeys.get(path);
+      if (cachedKey === statKey) {
+        return (_a = this.fileHashes.get(path)) != null ? _a : null;
+      }
+      const content = await adapter.read(path);
+      const hash = this.computeContentHash(content);
+      this.fileStatKeys.set(path, statKey);
+      this.fileHashes.set(path, hash);
+      return hash;
+    } catch (e) {
+      return null;
+    }
+  }
+  /**
    * FILE WATCHER - Detect changes to mentions.json while vault is open
    */
   async getMentionsFileHash() {
-    try {
-      const mentionsPath = this.mentionParser.getMentionsFilePath();
-      if (await this.app.vault.adapter.exists(mentionsPath)) {
-        const content = await this.app.vault.adapter.read(mentionsPath);
-        return this.computeContentHash(content);
-      }
-    } catch (e) {
-      console.error("Failed to get mentions file hash:", e);
-    }
-    return null;
+    return this.getFileHashCached(this.mentionParser.getMentionsFilePath());
   }
   async checkForMentionsFileChanges() {
     const currentHash = await this.getMentionsFileHash();
@@ -7043,33 +7101,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
         this.notifiedMentionIds.add(mention.id);
         this.notifiedContentHashes.add(contentHash);
       }
-      if (newUnread.length > 0 && this.settings.enableNotifications) {
-        console.debug("[Collab-Mentions] New unread mentions to notify:", newUnread.length);
-        if (newUnread.length > 3) {
-          const uniqueSenders = [...new Set(newUnread.map((m) => m.from))];
-          const senderText = uniqueSenders.length === 1 ? `from @${uniqueSenders[0]}` : `from ${uniqueSenders.length} people`;
-          this.showCenteredNotification(
-            "\u{1F4E3} New Mentions",
-            `You have ${newUnread.length} new mentions ${senderText}`,
-            () => {
-              void this.activateMentionPanel({ tab: "inbox" });
-            }
-          );
-        } else {
-          for (const mention of newUnread) {
-            this.showCenteredNotification(
-              "\u{1F4E3} New Mention",
-              `@${mention.from} mentioned you: "${this.truncateText(mention.context, 50)}"`,
-              () => {
-                void this.activateMentionPanel({ tab: "inbox" });
-              }
-            );
-          }
-        }
-        if (this.settings.notificationSound) {
-          this.notifier.playSound();
-        }
-      }
+      this.notifyAboutNewMentions(newUnread);
       this.refreshPanel(true);
       if (this.settings.autoCleanup) {
         await this.mentionParser.autoCleanupMentions(
@@ -7081,16 +7113,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     }
   }
   async getChatFileHash() {
-    try {
-      const chatPath = this.chatManager.getChatFilePath();
-      if (await this.app.vault.adapter.exists(chatPath)) {
-        const content = await this.app.vault.adapter.read(chatPath);
-        return this.computeContentHash(content);
-      }
-    } catch (e) {
-      console.error("Failed to get chat file hash:", e);
-    }
-    return null;
+    return this.getFileHashCached(this.chatManager.getChatFilePath());
   }
   async checkForChatFileChanges() {
     const currentHash = await this.getChatFileHash();
@@ -7232,16 +7255,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     }
   }
   async getUsersFileHash() {
-    try {
-      const usersPath = this.userManager.getUsersFilePath();
-      if (await this.app.vault.adapter.exists(usersPath)) {
-        const content = await this.app.vault.adapter.read(usersPath);
-        return this.computeContentHash(content);
-      }
-    } catch (e) {
-      console.error("Failed to get users file hash:", e);
-    }
-    return null;
+    return this.getFileHashCached(this.userManager.getUsersFilePath());
   }
   async checkForUsersFileChanges() {
     const currentHash = await this.getUsersFileHash();
@@ -7257,16 +7271,7 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     }
   }
   async getRemindersFileHash() {
-    try {
-      const remindersPath = this.reminderManager.getRemindersFilePath();
-      if (await this.app.vault.adapter.exists(remindersPath)) {
-        const content = await this.app.vault.adapter.read(remindersPath);
-        return this.computeContentHash(content);
-      }
-    } catch (e) {
-      console.error("Failed to get reminders file hash:", e);
-    }
-    return null;
+    return this.getFileHashCached(this.reminderManager.getRemindersFilePath());
   }
   async checkForRemindersFileChanges() {
     const currentHash = await this.getRemindersFileHash();
@@ -7287,8 +7292,61 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
       this.lastRemindersFileHash = currentHash;
     }
   }
+  /**
+   * Single entry point for "tell the user about these unread mentions".
+   * Handles batching (1–3 individual modals, 4+ collapsed to one), sound
+   * (once per call), and dedupe-set bookkeeping so the file watcher won't
+   * re-notify for the same mentions later.
+   */
+  notifyAboutNewMentions(mentions) {
+    if (mentions.length === 0)
+      return;
+    for (const m of mentions) {
+      this.notifiedMentionIds.add(m.id);
+      this.notifiedContentHashes.add(this.mentionParser.getMentionContentHash(m));
+    }
+    if (!this.settings.enableNotifications)
+      return;
+    if (mentions.length > 3) {
+      const uniqueSenders = [...new Set(mentions.map((m) => m.from))];
+      const senderText = uniqueSenders.length === 1 ? `from @${uniqueSenders[0]}` : `from ${uniqueSenders.length} people`;
+      this.showCenteredNotification(
+        "\u{1F4E3} New Mentions",
+        `You have ${mentions.length} new mentions ${senderText}`,
+        () => {
+          void this.activateMentionPanel({ tab: "inbox" });
+        }
+      );
+    } else {
+      for (const mention of mentions) {
+        this.showCenteredNotification(
+          "\u{1F4E3} New Mention",
+          `@${mention.from} mentioned you: "${this.truncateText(mention.context, 50)}"`,
+          () => {
+            void this.activateMentionPanel({ tab: "inbox" });
+          }
+        );
+      }
+    }
+    if (this.settings.notificationSound) {
+      this.notifier.playSound();
+    }
+  }
   showCenteredNotification(title, message, onClick) {
-    console.debug("[Collab-Mentions] showCenteredNotification called:", title, message);
+    var _a;
+    const key = `${title}\0${message}`;
+    const now = Date.now();
+    const lastShown = this.recentNotificationKeys.get(key);
+    if (lastShown !== void 0 && now - lastShown < 5e3) {
+      return;
+    }
+    this.recentNotificationKeys.set(key, now);
+    if (this.recentNotificationKeys.size > 50) {
+      for (const [k, t] of this.recentNotificationKeys) {
+        if (now - t > 6e4)
+          this.recentNotificationKeys.delete(k);
+      }
+    }
     const notification = document.createElement("div");
     notification.className = "collab-stacked-notification";
     const existingCount = this.activeNotifications.length;
@@ -7319,12 +7377,19 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     buttonRow.appendChild(dismissBtn);
     notification.appendChild(buttonRow);
     this.activeNotifications.push(notification);
-    setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      this.notificationTimers.delete(notification);
       this.removeNotification(notification);
     }, 1e4);
-    document.body.appendChild(notification);
+    this.notificationTimers.set(notification, timer);
+    ((_a = this.notificationHost) != null ? _a : document.body).appendChild(notification);
   }
   removeNotification(notification) {
+    const timer = this.notificationTimers.get(notification);
+    if (timer !== void 0) {
+      window.clearTimeout(timer);
+      this.notificationTimers.delete(notification);
+    }
     if (notification.parentNode) {
       notification.remove();
     }
@@ -7335,6 +7400,18 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     this.activeNotifications.forEach((n, i) => {
       n.setCssProps({ "--notification-top": `${20 + i * 90}px` });
     });
+  }
+  clearAllNotifications() {
+    for (const timer of this.notificationTimers.values()) {
+      window.clearTimeout(timer);
+    }
+    this.notificationTimers.clear();
+    for (const n of this.activeNotifications) {
+      if (n.parentNode)
+        n.remove();
+    }
+    this.activeNotifications = [];
+    this.recentNotificationKeys.clear();
   }
   truncateText(text, maxLength) {
     if (text.length <= maxLength)
@@ -7349,13 +7426,16 @@ var CollabMentionsPlugin = class extends import_obsidian5.Plugin {
     console.debug("Starting mentions file watcher...");
     this.fileWatcherInterval = window.setInterval(() => {
       void (async () => {
+        this.fileWatcherTickCount++;
         await this.checkForMentionsFileChanges();
         await this.checkForChatFileChanges();
         await this.checkForUsersFileChanges();
         await this.checkForRemindersFileChanges();
-        await this.userManager.loadPresence();
+        if (this.fileWatcherTickCount % 4 === 0) {
+          await this.userManager.loadPresence();
+        }
       })();
-    }, 3e3);
+    }, 8e3);
     void this.getMentionsFileHash().then((hash) => {
       this.lastMentionsFileHash = hash;
       console.debug("[Collab-Mentions] Initialized mentions hash");

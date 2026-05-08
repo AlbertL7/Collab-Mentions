@@ -1771,19 +1771,41 @@ export class ChatManager {
     // ==================== Read State Management ====================
 
     /**
-     * Mark a channel as read for current user
+     * Mark a channel as read for current user.
+     *
+     * Only writes to disk if the read state actually moves forward — otherwise
+     * every panel render would rewrite chat.json and trigger a Drive sync upload
+     * to every team member, even when there's nothing new to read.
      */
     async markAsRead(channelId?: string): Promise<void> {
         const currentUser = this.userManager.getCurrentUser();
         if (!currentUser) return;
 
         const targetChannel = channelId || this.activeChannelId;
+        const messages = this.chatData.channelMessages[targetChannel] || [];
+
+        // Find the latest non-system message timestamp in the channel.
+        let latestTs = 0;
+        for (const m of messages) {
+            if (m.from === 'system' || m.deleted) continue;
+            const t = Date.parse(m.timestamp);
+            if (t > latestTs) latestTs = t;
+        }
+
+        const existing = this.chatData.readState[targetChannel]?.[currentUser.vaultName];
+        const existingTs = existing ? Date.parse(existing) : 0;
+
+        // Already caught up — no write needed.
+        if (latestTs === 0 || existingTs >= latestTs) return;
 
         if (!this.chatData.readState[targetChannel]) {
             this.chatData.readState[targetChannel] = {};
         }
-
-        this.chatData.readState[targetChannel][currentUser.vaultName] = new Date().toISOString();
+        // Stamp at the latest message time, not "now". Two reasons:
+        //   1. Idempotent — re-reading the same channel won't change the file.
+        //   2. Avoids the read pointer drifting past messages that arrive with
+        //      a slightly later timestamp than the local clock at mark-time.
+        this.chatData.readState[targetChannel][currentUser.vaultName] = new Date(latestTs).toISOString();
         await this.saveChat();
     }
 
